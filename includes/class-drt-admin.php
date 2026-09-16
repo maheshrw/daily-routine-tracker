@@ -11,6 +11,8 @@ class DRT_Admin {
 		add_action( 'admin_post_drt_save_slot', array( $this, 'handle_save_slot' ) );
 		add_action( 'admin_post_drt_delete_slot', array( $this, 'handle_delete_slot' ) );
 		add_action( 'admin_post_drt_export_billable_csv', array( $this, 'handle_export_billable_csv' ) );
+		add_action( 'admin_post_drt_add_adhoc_log', array( $this, 'handle_add_adhoc_log' ) );
+		add_action( 'admin_post_drt_delete_adhoc_log', array( $this, 'handle_delete_adhoc_log' ) );
 	}
 
 	public function register_menu() {
@@ -23,7 +25,7 @@ class DRT_Admin {
 			'dashicons-clock',
 			3
 		);
-		add_submenu_page( 'drt-today', 'Today', 'Today', 'manage_options', 'drt-today', array( $this, 'render_today_page' ) );
+		add_submenu_page( 'drt-today', 'Day View', 'Day View', 'manage_options', 'drt-today', array( $this, 'render_today_page' ) );
 		add_submenu_page( 'drt-today', 'Routine Editor', 'Routine Editor', 'manage_options', 'drt-editor', array( $this, 'render_editor_page' ) );
 		add_submenu_page( 'drt-today', 'Reports', 'Reports', 'manage_options', 'drt-reports', array( $this, 'render_reports_page' ) );
 	}
@@ -34,31 +36,53 @@ class DRT_Admin {
 		}
 		wp_enqueue_style( 'drt-admin', DRT_PLUGIN_URL . 'assets/css/admin.css', array(), DRT_VERSION );
 		wp_enqueue_script( 'drt-admin', DRT_PLUGIN_URL . 'assets/js/admin.js', array( 'jquery' ), DRT_VERSION, true );
+
+		$view_date = $this->get_requested_date();
 		wp_localize_script(
 			'drt-admin',
 			'DRT',
 			array(
-				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-				'nonce'   => wp_create_nonce( 'drt_nonce' ),
-				'today'   => current_time( 'Y-m-d' ),
-				'now'     => current_time( 'H:i:s' ),
+				'ajaxUrl'  => admin_url( 'admin-ajax.php' ),
+				'nonce'    => wp_create_nonce( 'drt_nonce' ),
+				'today'    => current_time( 'Y-m-d' ),
+				'now'      => current_time( 'H:i:s' ),
+				'viewDate' => $view_date,
+				'isToday'  => ( $view_date === current_time( 'Y-m-d' ) ),
 			)
 		);
 	}
 
-	private function today_day_type() {
-		// N: 1 (Monday) - 7 (Sunday).
-		$dow = (int) current_time( 'N' );
-		return ( $dow >= 6 ) ? 'weekend' : 'weekday';
+	/**
+	 * Validate a Y-m-d date string from the query string; falls back to
+	 * today's date (site timezone) if missing or malformed.
+	 */
+	private function get_requested_date() {
+		$default = current_time( 'Y-m-d' );
+		if ( empty( $_GET['date'] ) ) {
+			return $default;
+		}
+		$date = sanitize_text_field( wp_unslash( $_GET['date'] ) );
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) {
+			return $default;
+		}
+		list( $y, $m, $d ) = array_map( 'intval', explode( '-', $date ) );
+		if ( ! checkdate( $m, $d, $y ) ) {
+			return $default;
+		}
+		return $date;
 	}
 
 	public function render_today_page() {
-		$date     = current_time( 'Y-m-d' );
-		$day_type = $this->today_day_type();
-		DRT_DB::ensure_today_logs( $date, $day_type );
+		$date = $this->get_requested_date();
+		DRT_DB::ensure_logs_for_date( $date );
 		$logs         = DRT_DB::get_logs_for_date( $date );
 		$log_ids      = wp_list_pluck( $logs, 'id' );
 		$subtasks_map = DRT_DB::get_subtasks_for_logs( $log_ids );
+
+		$today_str    = current_time( 'Y-m-d' );
+		$prev_date    = gmdate( 'Y-m-d', strtotime( $date . ' -1 day' ) );
+		$next_date    = gmdate( 'Y-m-d', strtotime( $date . ' +1 day' ) );
+
 		include DRT_PLUGIN_DIR . 'includes/views/today.php';
 	}
 
@@ -108,6 +132,48 @@ class DRT_Admin {
 			DRT_DB::delete_slot( $id );
 		}
 		wp_safe_redirect( admin_url( 'admin.php?page=drt-editor&deleted=1' ) );
+		exit;
+	}
+
+	/**
+	 * Add a one-off task to a single specific date (does not touch the
+	 * recurring weekday/weekend routine template).
+	 */
+	public function handle_add_adhoc_log() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Not allowed' );
+		}
+		check_admin_referer( 'drt_add_adhoc_log' );
+
+		$date = isset( $_POST['log_date'] ) ? sanitize_text_field( wp_unslash( $_POST['log_date'] ) ) : current_time( 'Y-m-d' );
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) {
+			$date = current_time( 'Y-m-d' );
+		}
+
+		DRT_DB::add_adhoc_log(
+			$date,
+			isset( $_POST['start_time'] ) ? sanitize_text_field( wp_unslash( $_POST['start_time'] ) ) : '00:00',
+			isset( $_POST['end_time'] ) ? sanitize_text_field( wp_unslash( $_POST['end_time'] ) ) : '00:00',
+			isset( $_POST['title'] ) ? sanitize_text_field( wp_unslash( $_POST['title'] ) ) : '',
+			isset( $_POST['category'] ) ? sanitize_text_field( wp_unslash( $_POST['category'] ) ) : 'other'
+		);
+
+		wp_safe_redirect( admin_url( 'admin.php?page=drt-today&date=' . rawurlencode( $date ) . '&added=1' ) );
+		exit;
+	}
+
+	public function handle_delete_adhoc_log() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Not allowed' );
+		}
+		check_admin_referer( 'drt_delete_adhoc_log' );
+
+		$id   = isset( $_GET['id'] ) ? (int) $_GET['id'] : 0;
+		$date = isset( $_GET['date'] ) ? sanitize_text_field( wp_unslash( $_GET['date'] ) ) : current_time( 'Y-m-d' );
+		if ( $id ) {
+			DRT_DB::delete_adhoc_log( $id );
+		}
+		wp_safe_redirect( admin_url( 'admin.php?page=drt-today&date=' . rawurlencode( $date ) . '&removed=1' ) );
 		exit;
 	}
 

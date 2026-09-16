@@ -200,10 +200,21 @@ class DRT_DB {
 	}
 
 	/**
-	 * Ensure today's log rows exist (one per active slot for today's day_type).
-	 * Called whenever the "Today" screen loads.
+	 * Weekday vs weekend for an arbitrary date (Mon-Fri = weekday,
+	 * Sat/Sun = weekend), used to pick which recurring routine a given
+	 * date should be seeded from.
 	 */
-	public static function ensure_today_logs( $date, $day_type ) {
+	public static function day_type_for_date( $date ) {
+		$dow = (int) date( 'N', strtotime( $date ) ); // 1 (Mon) - 7 (Sun)
+		return ( $dow >= 6 ) ? 'weekend' : 'weekday';
+	}
+
+	/**
+	 * Ensure a given date's log rows exist (one per active slot for that
+	 * date's day_type). Works for today, past, or future dates — called
+	 * whenever the Day view loads for a date it hasn't seeded yet.
+	 */
+	public static function ensure_logs_for_date( $date ) {
 		global $wpdb;
 		$logs_table = self::logs_table();
 
@@ -214,8 +225,9 @@ class DRT_DB {
 			return;
 		}
 
-		$slots = self::get_routine( $day_type );
-		$now   = current_time( 'mysql' );
+		$day_type = self::day_type_for_date( $date );
+		$slots    = self::get_routine( $day_type );
+		$now      = current_time( 'mysql' );
 		foreach ( $slots as $slot ) {
 			$wpdb->insert(
 				$logs_table,
@@ -233,6 +245,46 @@ class DRT_DB {
 				array( '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
 			);
 		}
+	}
+
+	/**
+	 * Add a one-off task for a single specific date only — it does not
+	 * touch the recurring weekday/weekend routine template, so it never
+	 * shows up on any other day.
+	 */
+	public static function add_adhoc_log( $date, $start_time, $end_time, $title, $category ) {
+		global $wpdb;
+		$now = current_time( 'mysql' );
+		$wpdb->insert(
+			self::logs_table(),
+			array(
+				'log_date'        => $date,
+				'slot_id'         => null,
+				'title'           => sanitize_text_field( $title ),
+				'category'        => sanitize_text_field( $category ),
+				'scheduled_start' => $start_time . ':00',
+				'scheduled_end'   => $end_time . ':00',
+				'status'          => 'missed',
+				'created_at'      => $now,
+				'updated_at'      => $now,
+			),
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+		);
+		return $wpdb->insert_id;
+	}
+
+	/**
+	 * Remove a log row entirely — only meaningful for one-off (slot_id
+	 * IS NULL) entries added via add_adhoc_log(); template-based rows
+	 * should be flipped to Missed instead, not deleted.
+	 */
+	public static function delete_adhoc_log( $id ) {
+		global $wpdb;
+		return $wpdb->delete(
+			self::logs_table(),
+			array( 'id' => $id, 'slot_id' => null ),
+			array( '%d', '%d' )
+		);
 	}
 
 	public static function get_logs_for_date( $date ) {

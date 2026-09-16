@@ -12,20 +12,30 @@ A private, single-site plugin to run and track a personal hour-by-hour daily rou
 
 Three admin screens under "Routine Tracker" in the WP admin sidebar:
 
-1. **Today** — shows today's schedule (auto-switches between a weekday and
-   weekend routine based on the day of the week). The current time slot is
-   highlighted automatically. Click "Start" to time exactly how long you
-   actually spend on a slot (e.g. 15 of a scheduled 25 minutes), then
-   "Done" to log it — or skip Start and Done just logs the slot's full
-   scheduled length. Every slot defaults to **Missed** until you click
-   Done; both Done and Missed are permanent toggle buttons you can flip
-   any time, even days later. Notes save automatically as you type.
+1. **Day View** (was "Today") — shows any single day's schedule: today by
+   default, or navigate with Prev/Next, the date picker, or a direct
+   `&date=YYYY-MM-DD` link. The current time slot is highlighted
+   automatically when viewing today; live timers, the tab-title countdown,
+   and desktop notifications only run on today's view. Click "Start" to
+   time exactly how long you actually spend on a slot (e.g. 15 of a
+   scheduled 25 minutes), then "Done" to log it — or skip Start and Done
+   just logs the slot's full scheduled length. Every slot defaults to
+   **Missed** until you click Done; both Done and Missed are permanent
+   toggle buttons you can flip any time, even days later. Notes save
+   automatically as you type.
+
+   Use **+ Add a task for this day** at the bottom to schedule a one-off
+   task for that specific date only (e.g. "Dentist appointment" tomorrow,
+   or a deadline crunch task next Tuesday) — it's tagged "one-off" in the
+   list and has its own Remove link, and it never touches your recurring
+   weekday/weekend template.
 
    Each slot also has a **+ Tasks** panel so you can break one time block
    into several individually-timed pieces — e.g. a 25-minute "Client Work"
    slot split into a 10-minute "Rosie — logo tweaks" task and a 15-minute
    "Study" task, each with its own Start/Stop timer and a **Billable**
-   checkbox.
+   checkbox. The panel also has an editable "Logged time" field for the
+   slot itself, in case the auto-computed value needs correcting.
 
 2. **Routine Editor** — add, edit, or remove time slots for the weekday and
    weekend routines. Comes pre-seeded with a default routine on activation
