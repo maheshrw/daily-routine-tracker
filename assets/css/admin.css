@@ -1,0 +1,62 @@
+.drt-wrap h1 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.drt-live-clock { font-size: 16px; font-weight: normal; color: #555; background: #fff; padding: 4px 10px; border-radius: 4px; border: 1px solid #ccd0d4; }
+#drt-enable-notifications { font-size: 13px; font-weight: normal; }
+
+.drt-today-table td, .drt-today-table th { vertical-align: middle; }
+.drt-row.drt-active { background: #e7f0ff !important; }
+.drt-row.drt-status-done { opacity: 0.55; }
+.drt-row.drt-status-missed-final .drt-status-label { color: #d63638; }
+.drt-row.drt-status-inprogress .drt-status-label { color: #2271b1; }
+.drt-row.drt-status-upcoming .drt-status-label { color: #777; }
+
+.drt-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; color: #fff; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+
+.drt-status-label { font-weight: 600; }
+
+.drt-timer { font-variant-numeric: tabular-nums; font-weight: 600; }
+.drt-timer.drt-timer-live { color: #2271b1; }
+.drt-timer.drt-timer-future { color: #999; font-weight: 400; }
+.drt-timer.drt-timer-ambient { color: #2271b1; font-weight: 400; }
+.drt-timer.drt-timer-past { color: #aaa; font-weight: 400; }
+.drt-timer.drt-timer-done { color: #2f9e44; }
+
+.drt-actions .button, .drt-actions .button-link { margin-right: 4px; }
+.drt-btn-done.drt-btn-active-done { background: #37B24D; border-color: #2f9e44; color: #fff; }
+.drt-btn-missed.drt-btn-active-missed { background: #d63638; border-color: #b32d2e; color: #fff; }
+.drt-btn-toggle-subtasks { text-decoration: none; }
+
+.drt-notes { width: 100%; min-height: 28px; resize: vertical; }
+
+.drt-subtask-panel td { background: #fafbfc; padding: 12px 16px; border-top: none; }
+.drt-subtask-box { border-left: 3px solid #ccd0d4; padding-left: 14px; }
+.drt-duration-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-weight: 600; }
+.drt-duration-row label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.drt-duration-input { width: 90px; }
+.drt-duration-saved { color: #2f9e44; font-weight: 600; font-size: 12px; }
+.drt-subtask-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+.drt-subtask-table th { text-align: left; font-size: 11px; text-transform: uppercase; color: #888; padding: 4px 6px; }
+.drt-subtask-table td { padding: 4px 6px; border-bottom: 1px solid #eee; }
+.drt-subtask-timer { font-variant-numeric: tabular-nums; font-weight: 600; color: #2271b1; }
+.drt-billable-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.drt-subtask-add { display: flex; align-items: center; gap: 10px; }
+.drt-subtask-title-input { flex: 1; max-width: 280px; }
+.drt-subtask-minutes-input { width: 110px; }
+.drt-btn-delete-subtask { color: #d63638; text-decoration: none; }
+
+.drt-editor-columns { display: flex; gap: 24px; flex-wrap: wrap; }
+.drt-editor-columns > div { flex: 1 1 420px; }
+
+.drt-report-filters { display: flex; gap: 16px; align-items: flex-end; margin: 16px 0; }
+.drt-report-filters label { display: flex; flex-direction: column; font-weight: 600; font-size: 12px; gap: 4px; }
+
+.drt-stat-cards { display: flex; gap: 16px; margin: 16px 0 24px; flex-wrap: wrap; }
+.drt-stat-card { background: #fff; border: 1px solid #ccd0d4; border-radius: 6px; padding: 16px 24px; min-width: 140px; text-align: center; }
+.drt-stat-num { display: block; font-size: 28px; font-weight: 700; color: #1d2327; }
+.drt-stat-label { display: block; font-size: 12px; color: #777; text-transform: uppercase; letter-spacing: 0.03em; margin-top: 4px; }
+
+.drt-bar-chart { background: #fff; border: 1px solid #ccd0d4; border-radius: 6px; padding: 16px 20px; margin-bottom: 24px; }
+.drt-bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.drt-bar-label { width: 90px; font-weight: 600; text-transform: capitalize; }
+.drt-bar-track { flex: 1; background: #f0f0f1; border-radius: 4px; overflow: hidden; height: 18px; }
+.drt-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+.drt-bar-value { width: 90px; font-size: 12px; color: #555; text-align: right; }

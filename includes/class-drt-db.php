@@ -1,0 +1,436 @@
+<?php
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class DRT_DB {
+
+	public static function routine_table() {
+		global $wpdb;
+		return $wpdb->prefix . 'drt_routine';
+	}
+
+	public static function logs_table() {
+		global $wpdb;
+		return $wpdb->prefix . 'drt_logs';
+	}
+
+	public static function subtasks_table() {
+		global $wpdb;
+		return $wpdb->prefix . 'drt_subtasks';
+	}
+
+	public static function create_tables() {
+		global $wpdb;
+		$charset_collate = $wpdb->get_charset_collate();
+
+		$routine_table   = self::routine_table();
+		$logs_table      = self::logs_table();
+		$subtasks_table  = self::subtasks_table();
+
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+		$sql1 = "CREATE TABLE {$routine_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			day_type VARCHAR(10) NOT NULL DEFAULT 'weekday',
+			start_time TIME NOT NULL,
+			end_time TIME NOT NULL,
+			title VARCHAR(191) NOT NULL,
+			category VARCHAR(20) NOT NULL DEFAULT 'other',
+			sort_order INT NOT NULL DEFAULT 0,
+			active TINYINT(1) NOT NULL DEFAULT 1,
+			PRIMARY KEY  (id),
+			KEY day_type (day_type)
+		) {$charset_collate};";
+		dbDelta( $sql1 );
+
+		$sql2 = "CREATE TABLE {$logs_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			log_date DATE NOT NULL,
+			slot_id BIGINT UNSIGNED NULL,
+			title VARCHAR(191) NOT NULL,
+			category VARCHAR(20) NOT NULL DEFAULT 'other',
+			scheduled_start TIME NULL,
+			scheduled_end TIME NULL,
+			status VARCHAR(10) NOT NULL DEFAULT 'missed',
+			actual_start DATETIME NULL,
+			actual_end DATETIME NULL,
+			duration_seconds INT NULL,
+			notes TEXT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY  (id),
+			KEY log_date (log_date),
+			KEY slot_id (slot_id),
+			KEY category (category)
+		) {$charset_collate};";
+		dbDelta( $sql2 );
+
+		$sql3 = "CREATE TABLE {$subtasks_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			log_id BIGINT UNSIGNED NOT NULL,
+			title VARCHAR(191) NOT NULL,
+			billable TINYINT(1) NOT NULL DEFAULT 0,
+			actual_start DATETIME NULL,
+			actual_end DATETIME NULL,
+			duration_seconds INT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY  (id),
+			KEY log_id (log_id),
+			KEY billable (billable)
+		) {$charset_collate};";
+		dbDelta( $sql3 );
+	}
+
+	/**
+	 * Seed a sensible default routine (weekday + weekend) only if the
+	 * routine table is empty, so re-activating never overwrites edits.
+	 */
+	public static function maybe_seed_default_routine() {
+		global $wpdb;
+		$table = self::routine_table();
+		$count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
+		if ( $count > 0 ) {
+			return;
+		}
+
+		$weekday = array(
+			array( '05:45', '06:00', 'Wake Up & Water', 'other' ),
+			array( '06:00', '06:40', 'Morning Walk', 'exercise' ),
+			array( '06:40', '06:50', 'Stretching', 'exercise' ),
+			array( '06:50', '07:15', 'Shower & Get Ready', 'other' ),
+			array( '07:15', '07:45', 'Breakfast', 'eat' ),
+			array( '07:45', '08:00', 'Reading', 'read' ),
+			array( '08:00', '08:30', 'Plan the Day', 'work' ),
+			array( '08:30', '12:30', 'Deep Work Block 1', 'work' ),
+			array( '12:30', '13:00', 'Walk / Stretch', 'exercise' ),
+			array( '13:00', '13:45', 'Lunch', 'eat' ),
+			array( '13:45', '14:15', 'Rest / Short Walk', 'rest' ),
+			array( '14:15', '17:30', 'Work Block 2', 'work' ),
+			array( '17:30', '18:15', 'Evening Walk', 'exercise' ),
+			array( '18:15', '19:00', 'Free Time / Hobby', 'other' ),
+			array( '19:00', '19:30', 'Dinner', 'eat' ),
+			array( '19:30', '21:30', 'Free Time / Gaming', 'game' ),
+			array( '21:30', '22:00', 'Wind Down / Reading', 'read' ),
+			array( '22:00', '23:59', 'Sleep', 'rest' ),
+		);
+
+		$weekend = array(
+			array( '05:45', '06:00', 'Wake Up & Water', 'other' ),
+			array( '06:00', '07:00', 'Long Walk / Outdoor Activity', 'exercise' ),
+			array( '07:00', '07:30', 'Shower & Get Ready', 'other' ),
+			array( '07:30', '08:15', 'Breakfast', 'eat' ),
+			array( '08:15', '10:00', 'Reading Session', 'read' ),
+			array( '10:00', '13:00', 'Free Time / Chores / Hobby', 'other' ),
+			array( '13:00', '13:45', 'Lunch', 'eat' ),
+			array( '13:45', '14:30', 'Rest', 'rest' ),
+			array( '14:30', '17:00', 'Reading / Hobby Block', 'read' ),
+			array( '17:00', '18:00', 'Walk', 'exercise' ),
+			array( '18:00', '19:00', 'Free Time', 'other' ),
+			array( '19:00', '19:30', 'Dinner', 'eat' ),
+			array( '19:30', '22:30', 'Gaming Block', 'game' ),
+			array( '22:30', '23:00', 'Wind Down', 'other' ),
+			array( '23:00', '23:59', 'Sleep', 'rest' ),
+		);
+
+		$order = 0;
+		foreach ( array( 'weekday' => $weekday, 'weekend' => $weekend ) as $day_type => $slots ) {
+			foreach ( $slots as $slot ) {
+				$wpdb->insert(
+					$table,
+					array(
+						'day_type'   => $day_type,
+						'start_time' => $slot[0] . ':00',
+						'end_time'   => $slot[1] . ':00',
+						'title'      => $slot[2],
+						'category'   => $slot[3],
+						'sort_order' => $order++,
+						'active'     => 1,
+					),
+					array( '%s', '%s', '%s', '%s', '%s', '%d', '%d' )
+				);
+			}
+		}
+	}
+
+	public static function get_routine( $day_type ) {
+		global $wpdb;
+		$table = self::routine_table();
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE day_type = %s AND active = 1 ORDER BY start_time ASC",
+				$day_type
+			)
+		);
+	}
+
+	public static function get_slot( $id ) {
+		global $wpdb;
+		$table = self::routine_table();
+		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $id ) );
+	}
+
+	public static function save_slot( $data, $id = 0 ) {
+		global $wpdb;
+		$table   = self::routine_table();
+		$fields  = array(
+			'day_type'   => sanitize_text_field( $data['day_type'] ),
+			'start_time' => sanitize_text_field( $data['start_time'] ) . ':00',
+			'end_time'   => sanitize_text_field( $data['end_time'] ) . ':00',
+			'title'      => sanitize_text_field( $data['title'] ),
+			'category'   => sanitize_text_field( $data['category'] ),
+			'sort_order' => isset( $data['sort_order'] ) ? (int) $data['sort_order'] : 0,
+			'active'     => 1,
+		);
+		$formats = array( '%s', '%s', '%s', '%s', '%s', '%d', '%d' );
+
+		if ( $id ) {
+			$wpdb->update( $table, $fields, array( 'id' => $id ), $formats, array( '%d' ) );
+			return $id;
+		}
+		$wpdb->insert( $table, $fields, $formats );
+		return $wpdb->insert_id;
+	}
+
+	public static function delete_slot( $id ) {
+		global $wpdb;
+		$table = self::routine_table();
+		return $wpdb->update( $table, array( 'active' => 0 ), array( 'id' => $id ), array( '%d' ), array( '%d' ) );
+	}
+
+	/**
+	 * Ensure today's log rows exist (one per active slot for today's day_type).
+	 * Called whenever the "Today" screen loads.
+	 */
+	public static function ensure_today_logs( $date, $day_type ) {
+		global $wpdb;
+		$logs_table = self::logs_table();
+
+		$existing = (int) $wpdb->get_var(
+			$wpdb->prepare( "SELECT COUNT(*) FROM {$logs_table} WHERE log_date = %s", $date )
+		);
+		if ( $existing > 0 ) {
+			return;
+		}
+
+		$slots = self::get_routine( $day_type );
+		$now   = current_time( 'mysql' );
+		foreach ( $slots as $slot ) {
+			$wpdb->insert(
+				$logs_table,
+				array(
+					'log_date'        => $date,
+					'slot_id'         => $slot->id,
+					'title'           => $slot->title,
+					'category'        => $slot->category,
+					'scheduled_start' => $slot->start_time,
+					'scheduled_end'   => $slot->end_time,
+					'status'          => 'missed',
+					'created_at'      => $now,
+					'updated_at'      => $now,
+				),
+				array( '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+			);
+		}
+	}
+
+	public static function get_logs_for_date( $date ) {
+		global $wpdb;
+		$table = self::logs_table();
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE log_date = %s ORDER BY scheduled_start ASC",
+				$date
+			)
+		);
+	}
+
+	public static function get_log( $id ) {
+		global $wpdb;
+		$table = self::logs_table();
+		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $id ) );
+	}
+
+	public static function update_log( $id, $fields, $formats ) {
+		global $wpdb;
+		$fields['updated_at'] = current_time( 'mysql' );
+		$formats[]            = '%s';
+		$table                = self::logs_table();
+		return $wpdb->update( $table, $fields, array( 'id' => $id ), $formats, array( '%d' ) );
+	}
+
+	public static function get_logs_between( $start_date, $end_date ) {
+		global $wpdb;
+		$table = self::logs_table();
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE log_date BETWEEN %s AND %s ORDER BY log_date ASC, scheduled_start ASC",
+				$start_date,
+				$end_date
+			)
+		);
+	}
+
+	/* ---------------------------------------------------------------
+	 * Subtasks: ad-hoc tasks logged inside a time slot (e.g. "Rosie
+	 * work" and "Study" both inside one Work Block), each with its own
+	 * start/stop timer and a billable flag for invoicing.
+	 * ------------------------------------------------------------- */
+
+	/**
+	 * Add a subtask. If $duration_minutes is given (e.g. entered directly
+	 * in the Done panel instead of using a live timer), the subtask is
+	 * created already-completed with that exact duration. Otherwise it
+	 * starts a live timer (actual_start = now) for a Stop button later.
+	 */
+	public static function add_subtask( $log_id, $title, $billable, $duration_minutes = null ) {
+		global $wpdb;
+		$now = current_time( 'mysql' );
+
+		if ( null !== $duration_minutes && is_numeric( $duration_minutes ) && $duration_minutes > 0 ) {
+			$seconds = (int) round( $duration_minutes * 60 );
+			$fields  = array(
+				'log_id'            => (int) $log_id,
+				'title'             => sanitize_text_field( $title ),
+				'billable'          => $billable ? 1 : 0,
+				'actual_start'      => null,
+				'actual_end'        => $now,
+				'duration_seconds'  => $seconds,
+				'created_at'        => $now,
+				'updated_at'        => $now,
+			);
+			$formats = array( '%d', '%s', '%d', '%s', '%s', '%d', '%s', '%s' );
+		} else {
+			$fields  = array(
+				'log_id'       => (int) $log_id,
+				'title'        => sanitize_text_field( $title ),
+				'billable'     => $billable ? 1 : 0,
+				'actual_start' => $now,
+				'created_at'   => $now,
+				'updated_at'   => $now,
+			);
+			$formats = array( '%d', '%s', '%d', '%s', '%s', '%s' );
+		}
+
+		$wpdb->insert( self::subtasks_table(), $fields, $formats );
+		return $wpdb->insert_id;
+	}
+
+	public static function get_subtask( $id ) {
+		global $wpdb;
+		$table = self::subtasks_table();
+		return $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $id ) );
+	}
+
+	public static function stop_subtask( $id ) {
+		global $wpdb;
+		$subtask = self::get_subtask( $id );
+		if ( ! $subtask ) {
+			return false;
+		}
+		$now      = current_time( 'mysql' );
+		$duration = null;
+		if ( ! empty( $subtask->actual_start ) ) {
+			$duration = max( 0, strtotime( $now ) - strtotime( $subtask->actual_start ) );
+		}
+		$wpdb->update(
+			self::subtasks_table(),
+			array(
+				'actual_end'       => $now,
+				'duration_seconds' => $duration,
+				'updated_at'       => $now,
+			),
+			array( 'id' => $id ),
+			array( '%s', '%d', '%s' ),
+			array( '%d' )
+		);
+		return $duration;
+	}
+
+	public static function set_subtask_billable( $id, $billable ) {
+		global $wpdb;
+		return $wpdb->update(
+			self::subtasks_table(),
+			array( 'billable' => $billable ? 1 : 0, 'updated_at' => current_time( 'mysql' ) ),
+			array( 'id' => $id ),
+			array( '%d', '%s' ),
+			array( '%d' )
+		);
+	}
+
+	public static function delete_subtask( $id ) {
+		global $wpdb;
+		return $wpdb->delete( self::subtasks_table(), array( 'id' => $id ), array( '%d' ) );
+	}
+
+	public static function get_subtasks_for_log( $log_id ) {
+		global $wpdb;
+		$table = self::subtasks_table();
+		return $wpdb->get_results(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE log_id = %d ORDER BY actual_start ASC, id ASC", $log_id )
+		);
+	}
+
+	/**
+	 * Batch-fetch subtasks for many logs in a single query (used by the
+	 * Today screen so it isn't running one query per slot — 15-20 extra
+	 * round trips otherwise). Returns [ log_id => [subtask, ...] ].
+	 */
+	public static function get_subtasks_for_logs( array $log_ids ) {
+		if ( empty( $log_ids ) ) {
+			return array();
+		}
+		global $wpdb;
+		$table        = self::subtasks_table();
+		$placeholders = implode( ',', array_fill( 0, count( $log_ids ), '%d' ) );
+		$sql          = $wpdb->prepare(
+			"SELECT * FROM {$table} WHERE log_id IN ({$placeholders}) ORDER BY actual_start ASC, id ASC",
+			$log_ids
+		);
+		$rows    = $wpdb->get_results( $sql );
+		$grouped = array();
+		foreach ( $rows as $row ) {
+			$grouped[ (int) $row->log_id ][] = $row;
+		}
+		return $grouped;
+	}
+
+	/**
+	 * Sum of completed subtask durations for a log — used as the smart
+	 * default when marking a slot Done, so a slot split into several
+	 * logged tasks doesn't have to be re-timed separately.
+	 */
+	public static function sum_subtask_seconds( $log_id ) {
+		global $wpdb;
+		$table = self::subtasks_table();
+		$sum   = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT SUM(duration_seconds) FROM {$table} WHERE log_id = %d AND duration_seconds IS NOT NULL",
+				$log_id
+			)
+		);
+		return $sum ? (int) $sum : 0;
+	}
+
+	/**
+	 * All subtasks in a date range, joined to their parent log for date,
+	 * slot title, and category — used by the Reports / billable summary.
+	 */
+	public static function get_subtasks_between( $start_date, $end_date ) {
+		global $wpdb;
+		$subtasks_table = self::subtasks_table();
+		$logs_table     = self::logs_table();
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT s.*, l.log_date AS log_date, l.title AS slot_title, l.category AS category
+				 FROM {$subtasks_table} s
+				 INNER JOIN {$logs_table} l ON l.id = s.log_id
+				 WHERE l.log_date BETWEEN %s AND %s
+				 ORDER BY l.log_date ASC, s.actual_start ASC",
+				$start_date,
+				$end_date
+			)
+		);
+	}
+}
