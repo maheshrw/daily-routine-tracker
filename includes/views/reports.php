@@ -111,7 +111,7 @@ foreach ( $summary['by_category'] as $cat_data ) {
 		</table>
 	<?php endif; ?>
 
-	<h2>Billable / Invoicing (from tasks logged inside slots)</h2>
+	<h2>Billable / Invoicing (in-slot tasks and one-off tasks)</h2>
 	<p>
 		<a class="button" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_export_billable_csv&range=' . $range . '&ref_date=' . $ref_date ), 'drt_export_billable_csv' ) ); ?>">Export CSV for this range</a>
 	</p>
@@ -136,17 +136,17 @@ foreach ( $summary['by_category'] as $cat_data ) {
 	<table class="widefat striped">
 		<thead><tr><th>Date</th><th>Slot</th><th>Task</th><th>Billable</th><th>Duration</th></tr></thead>
 		<tbody>
-		<?php foreach ( array_reverse( $billable['subtasks'] ) as $st ) : ?>
+		<?php foreach ( array_reverse( $billable['entries'] ) as $entry ) : ?>
 			<tr>
-				<td><?php echo esc_html( $st->log_date ); ?></td>
-				<td><?php echo esc_html( $st->slot_title ); ?></td>
-				<td><?php echo esc_html( $st->title ); ?></td>
-				<td><?php echo $st->billable ? '<strong>Yes</strong>' : 'No'; ?></td>
-				<td><?php echo $st->duration_seconds ? esc_html( gmdate( 'H:i:s', (int) $st->duration_seconds ) ) : '— (running or not stopped)'; ?></td>
+				<td><?php echo esc_html( $entry->log_date ); ?></td>
+				<td><?php echo esc_html( $entry->slot_title ); ?></td>
+				<td><?php echo esc_html( $entry->title ); ?></td>
+				<td><?php echo $entry->billable ? '<strong>Yes</strong>' : 'No'; ?></td>
+				<td><?php echo $entry->duration_seconds ? esc_html( gmdate( 'H:i:s', (int) $entry->duration_seconds ) ) : '— (running or not stopped)'; ?></td>
 			</tr>
 		<?php endforeach; ?>
-		<?php if ( empty( $billable['subtasks'] ) ) : ?>
-			<tr><td colspan="5">No tasks logged inside slots for this range yet.</td></tr>
+		<?php if ( empty( $billable['entries'] ) ) : ?>
+			<tr><td colspan="5">No in-slot or one-off tasks logged for this range yet.</td></tr>
 		<?php endif; ?>
 		</tbody>
 	</table>

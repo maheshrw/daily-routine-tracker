@@ -51,6 +51,9 @@ class DRT_Ajax {
 			),
 			array( '%s', '%s' )
 		);
+		// Clicking Start is the explicit "stop nagging me" signal for a
+		// reminder-enabled one-off task.
+		wp_clear_scheduled_hook( 'drt_send_task_reminder', array( $id ) );
 		wp_send_json_success( array( 'actual_start' => $now ) );
 	}
 
@@ -92,6 +95,8 @@ class DRT_Ajax {
 			),
 			array( '%s', '%s', '%d' )
 		);
+		// Marking Done directly (without Start) also stops a repeating reminder.
+		wp_clear_scheduled_hook( 'drt_send_task_reminder', array( $id ) );
 		wp_send_json_success( array( 'duration_seconds' => $duration ) );
 	}
 

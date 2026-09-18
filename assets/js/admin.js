@@ -12,6 +12,7 @@
 
 	var originalTitle = document.title;
 	var notifiedEnded = {}; // log_id -> true once we've handled its end-of-slot notification
+	var reminderLastFired = {}; // log_id -> ms timestamp of the last "time for task" reminder
 
 	function serverNow() {
 		return new Date(Date.now() + offsetMs);
@@ -64,6 +65,19 @@
 		}
 	}
 
+	function notifyTimeForTask(title, startStr, endStr) {
+		if ( ! notifyPermissionGranted() ) {
+			return;
+		}
+		try {
+			new Notification( "It's time: " + title, {
+				body: 'Scheduled ' + (startStr || '').substring(0, 5) + '\u2013' + (endStr || '').substring(0, 5) + '. This will keep reminding you every 5 minutes until you click Start or Done.'
+			} );
+		} catch (e) {
+			// Fail quietly.
+		}
+	}
+
 	function tickClock() {
 		var now = serverNow();
 		$('#drt-live-clock').text(
@@ -106,6 +120,19 @@
 				notifiedEnded[logId] = true;
 				if (status !== 'done') {
 					notifySlotEnded($row.find('.drt-title').text(), $row.data('start'), $row.data('end'));
+				}
+			}
+
+			// Reminder-flagged tasks (one-off tasks with "Remind me"
+			// checked): nag every 5 minutes from their scheduled start,
+			// in this browser tab, until Start is clicked or it's Done —
+			// mirrors the server-side email reminder, for when this tab
+			// happens to be open.
+			if ($row.attr('data-remind') === '1' && status !== 'done' && !actualStart && !isFuture) {
+				var lastFired = reminderLastFired[logId];
+				if (lastFired === undefined || (nowMs - lastFired) >= 5 * 60 * 1000) {
+					reminderLastFired[logId] = nowMs;
+					notifyTimeForTask($row.find('.drt-title').text(), $row.data('start'), $row.data('end'));
 				}
 			}
 

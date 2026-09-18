@@ -39,6 +39,7 @@ class DRT_DB {
 			category VARCHAR(20) NOT NULL DEFAULT 'other',
 			sort_order INT NOT NULL DEFAULT 0,
 			active TINYINT(1) NOT NULL DEFAULT 1,
+			auto_done TINYINT(1) NOT NULL DEFAULT 0,
 			PRIMARY KEY  (id),
 			KEY day_type (day_type)
 		) {$charset_collate};";
@@ -53,6 +54,8 @@ class DRT_DB {
 			scheduled_start TIME NULL,
 			scheduled_end TIME NULL,
 			status VARCHAR(10) NOT NULL DEFAULT 'missed',
+			remind TINYINT(1) NOT NULL DEFAULT 0,
+			billable TINYINT(1) NOT NULL DEFAULT 0,
 			actual_start DATETIME NULL,
 			actual_end DATETIME NULL,
 			duration_seconds INT NULL,
@@ -213,13 +216,19 @@ class DRT_DB {
 	 * Ensure a given date's log rows exist (one per active slot for that
 	 * date's day_type). Works for today, past, or future dates — called
 	 * whenever the Day view loads for a date it hasn't seeded yet.
+	 *
+	 * Checks specifically for template-based rows (slot_id IS NOT NULL),
+	 * not just any row — otherwise a one-off task added for a date before
+	 * its Day View was ever opened would make this think the date was
+	 * already seeded, and the whole recurring routine would never appear
+	 * for that day.
 	 */
 	public static function ensure_logs_for_date( $date ) {
 		global $wpdb;
 		$logs_table = self::logs_table();
 
 		$existing = (int) $wpdb->get_var(
-			$wpdb->prepare( "SELECT COUNT(*) FROM {$logs_table} WHERE log_date = %s", $date )
+			$wpdb->prepare( "SELECT COUNT(*) FROM {$logs_table} WHERE log_date = %s AND slot_id IS NOT NULL", $date )
 		);
 		if ( $existing > 0 ) {
 			return;
@@ -229,33 +238,57 @@ class DRT_DB {
 		$slots    = self::get_routine( $day_type );
 		$now      = current_time( 'mysql' );
 		foreach ( $slots as $slot ) {
+			$is_auto_done = ! empty( $slot->auto_done );
+			$scheduled_seconds = max( 0, strtotime( $slot->end_time ) - strtotime( $slot->start_time ) );
 			$wpdb->insert(
 				$logs_table,
 				array(
-					'log_date'        => $date,
-					'slot_id'         => $slot->id,
-					'title'           => $slot->title,
-					'category'        => $slot->category,
-					'scheduled_start' => $slot->start_time,
-					'scheduled_end'   => $slot->end_time,
-					'status'          => 'missed',
-					'created_at'      => $now,
-					'updated_at'      => $now,
+					'log_date'         => $date,
+					'slot_id'          => $slot->id,
+					'title'            => $slot->title,
+					'category'         => $slot->category,
+					'scheduled_start'  => $slot->start_time,
+					'scheduled_end'    => $slot->end_time,
+					'status'           => $is_auto_done ? 'done' : 'missed',
+					'actual_end'       => $is_auto_done ? $now : null,
+					'duration_seconds' => $is_auto_done ? $scheduled_seconds : null,
+					'created_at'       => $now,
+					'updated_at'       => $now,
 				),
-				array( '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+				array( '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s' )
 			);
 		}
 	}
 
 	/**
+	 * Turn a slot's "auto-done" flag on or off. While on, every future day
+	 * that includes this slot has its log created already marked Done
+	 * (with the slot's scheduled length as the logged time) instead of
+	 * defaulting to Missed — stays permanent until toggled off here. This
+	 * only affects days not yet seeded; days whose logs already exist are
+	 * untouched (same as any other routine-template edit).
+	 */
+	public static function toggle_slot_auto_done( $id, $auto_done ) {
+		global $wpdb;
+		return $wpdb->update(
+			self::routine_table(),
+			array( 'auto_done' => $auto_done ? 1 : 0 ),
+			array( 'id' => $id ),
+			array( '%d' ),
+			array( '%d' )
+		);
+	}
+
+	/**
 	 * Add a one-off task for a single specific date only — it does not
 	 * touch the recurring weekday/weekend routine template, so it never
-	 * shows up on any other day.
+	 * shows up on any other day. Returns the new log's id, or false (with
+	 * $wpdb->last_error populated) if the insert failed.
 	 */
-	public static function add_adhoc_log( $date, $start_time, $end_time, $title, $category ) {
+	public static function add_adhoc_log( $date, $start_time, $end_time, $title, $category, $remind = false, $billable = false ) {
 		global $wpdb;
-		$now = current_time( 'mysql' );
-		$wpdb->insert(
+		$now    = current_time( 'mysql' );
+		$result = $wpdb->insert(
 			self::logs_table(),
 			array(
 				'log_date'        => $date,
@@ -265,12 +298,50 @@ class DRT_DB {
 				'scheduled_start' => $start_time . ':00',
 				'scheduled_end'   => $end_time . ':00',
 				'status'          => 'missed',
+				'remind'          => $remind ? 1 : 0,
+				'billable'        => $billable ? 1 : 0,
 				'created_at'      => $now,
 				'updated_at'      => $now,
 			),
-			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+			array( '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s' )
 		);
+		if ( false === $result ) {
+			return false;
+		}
 		return $wpdb->insert_id;
+	}
+
+	/**
+	 * One-off (slot_id IS NULL) tasks from a date onward, for the Routine
+	 * Editor's "upcoming one-off tasks" list.
+	 */
+	public static function get_upcoming_adhoc_logs( $from_date, $limit = 50 ) {
+		global $wpdb;
+		$table = self::logs_table();
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE slot_id IS NULL AND log_date >= %s ORDER BY log_date ASC, scheduled_start ASC LIMIT %d",
+				$from_date,
+				$limit
+			)
+		);
+	}
+
+	/**
+	 * All one-off (slot_id IS NULL) tasks in a date range, billable or
+	 * not — merged into the Reports billable summary alongside in-slot
+	 * subtasks (mirrors get_subtasks_between).
+	 */
+	public static function get_adhoc_logs_between( $start_date, $end_date ) {
+		global $wpdb;
+		$table = self::logs_table();
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE slot_id IS NULL AND log_date BETWEEN %s AND %s ORDER BY log_date ASC, scheduled_start ASC",
+				$start_date,
+				$end_date
+			)
+		);
 	}
 
 	/**

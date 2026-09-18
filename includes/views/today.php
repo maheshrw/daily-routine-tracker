@@ -30,6 +30,18 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 	<?php if ( isset( $_GET['removed'] ) ) : ?>
 		<div class="notice notice-success is-dismissible"><p>Task removed.</p></div>
 	<?php endif; ?>
+	<?php if ( ! empty( $_GET['drt_error'] ) ) : ?>
+		<div class="notice notice-error">
+			<p>
+				<strong>That task wasn't saved.</strong>
+				Database said: <code><?php echo esc_html( sanitize_text_field( wp_unslash( $_GET['drt_error'] ) ) ); ?></code>
+			</p>
+			<p>
+				This usually means the database table is out of date with the plugin files. Try:
+				<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_force_db_upgrade' ), 'drt_force_db_upgrade' ) ); ?>">Re-check database tables</a>
+			</p>
+		</div>
+	<?php endif; ?>
 
 	<div class="drt-date-nav">
 		<a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=drt-today&date=' . $prev_date ) ); ?>">&larr; Prev day</a>
@@ -99,11 +111,14 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 				data-end="<?php echo esc_attr( $log->scheduled_end ); ?>"
 				data-status="<?php echo esc_attr( $log->status ); ?>"
 				data-actual-start="<?php echo esc_attr( $log->actual_start ); ?>"
-				data-logged-duration="<?php echo esc_attr( $log->duration_seconds ); ?>">
+				data-logged-duration="<?php echo esc_attr( $log->duration_seconds ); ?>"
+				data-remind="<?php echo esc_attr( ! empty( $log->remind ) ? 1 : 0 ); ?>">
 				<td class="drt-time"><?php echo esc_html( substr( $log->scheduled_start, 0, 5 ) . '–' . substr( $log->scheduled_end, 0, 5 ) ); ?></td>
 				<td class="drt-title">
 					<?php echo esc_html( $log->title ); ?>
 					<?php if ( $is_adhoc ) : ?><span class="drt-adhoc-tag" title="One-off task, only on this day">one-off</span><?php endif; ?>
+					<?php if ( ! empty( $log->billable ) ) : ?><span class="drt-billable-tag" title="Billable">💰</span><?php endif; ?>
+					<?php if ( ! empty( $log->remind ) ) : ?><span class="drt-remind-tag" title="Reminds every 5 minutes until you click Start or Done">🔔</span><?php endif; ?>
 				</td>
 				<td><span class="drt-badge" style="background:<?php echo esc_attr( $color ); ?>"><?php echo esc_html( $log->category ); ?></span></td>
 				<td class="drt-status"><span class="drt-status-label"><?php echo esc_html( $static_status ); ?></span></td>
@@ -202,7 +217,9 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 				<option value="other" selected>Other</option>
 			</select>
 		</label>
+		<label class="drt-adhoc-reminder"><input type="checkbox" name="remind" value="1"> Remind me (every 5 min until Start/Done)</label>
+		<label class="drt-adhoc-reminder"><input type="checkbox" name="billable" value="1"> Billable</label>
 		<button type="submit" class="button button-primary">Add task to <?php echo esc_html( $date ); ?></button>
 	</form>
-	<p class="description">This only adds the task to <?php echo esc_html( $date_label ); ?> — your recurring weekday/weekend routine is untouched. Edit the recurring routine itself from Routine Editor.</p>
+	<p class="description">This only adds the task to <?php echo esc_html( $date_label ); ?> — your recurring weekday/weekend routine is untouched. Edit the recurring routine itself, or manage all one-off tasks with reminders, from Routine Editor.</p>
 </div>

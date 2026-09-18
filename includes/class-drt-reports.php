@@ -94,26 +94,49 @@ class DRT_Reports {
 	}
 
 	/**
-	 * Sub-task time breakdown for the same range — billable vs
-	 * non-billable, for weekly/monthly invoicing review.
+	 * Billable time breakdown for the same range — merges in-slot
+	 * subtasks with standalone one-off tasks (each normalized to the
+	 * same shape: log_date, slot_title, title, billable, duration_seconds)
+	 * so both count toward invoicing totals.
 	 */
 	public static function build_billable_summary( $range, $ref_date ) {
 		list( $start, $end ) = self::get_range( $range, $ref_date );
 		$subtasks = DRT_DB::get_subtasks_between( $start, $end );
+		$adhoc    = DRT_DB::get_adhoc_logs_between( $start, $end );
 
-		$out = array(
-			'start'              => $start,
-			'end'                => $end,
-			'billable_count'     => 0,
-			'billable_seconds'   => 0,
-			'non_billable_count' => 0,
-			'non_billable_seconds' => 0,
-			'subtasks'           => $subtasks,
+		$entries = array();
+		foreach ( $subtasks as $st ) {
+			$entries[] = $st;
+		}
+		foreach ( $adhoc as $log ) {
+			$entries[] = (object) array(
+				'log_date'         => $log->log_date,
+				'slot_title'       => 'One-off task',
+				'title'            => $log->title,
+				'billable'         => $log->billable,
+				'duration_seconds' => $log->duration_seconds,
+			);
+		}
+		usort(
+			$entries,
+			function ( $a, $b ) {
+				return strcmp( $a->log_date, $b->log_date );
+			}
 		);
 
-		foreach ( $subtasks as $st ) {
-			$seconds = (int) $st->duration_seconds;
-			if ( $st->billable ) {
+		$out = array(
+			'start'                => $start,
+			'end'                  => $end,
+			'billable_count'       => 0,
+			'billable_seconds'     => 0,
+			'non_billable_count'   => 0,
+			'non_billable_seconds' => 0,
+			'entries'              => $entries,
+		);
+
+		foreach ( $entries as $entry ) {
+			$seconds = (int) $entry->duration_seconds;
+			if ( $entry->billable ) {
 				$out['billable_count']++;
 				$out['billable_seconds'] += $seconds;
 			} else {

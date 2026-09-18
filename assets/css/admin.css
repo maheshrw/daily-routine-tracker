@@ -34,6 +34,8 @@
 
 .drt-row-adhoc { background: #fbf6e9; }
 .drt-adhoc-tag { display: inline-block; margin-left: 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.03em; color: #a06b00; background: #fdf0d0; border-radius: 8px; padding: 1px 7px; vertical-align: middle; }
+.drt-remind-tag { margin-left: 4px; }
+.drt-billable-tag { margin-left: 4px; }
 .drt-btn-delete-adhoc { color: #d63638; text-decoration: none; margin-left: 4px; }
 
 .drt-adhoc-heading { margin-top: 26px; }
@@ -41,6 +43,7 @@
 .drt-adhoc-form label { display: flex; flex-direction: column; font-size: 12px; font-weight: 600; gap: 4px; color: #444; }
 .drt-adhoc-form input[type="text"] { min-width: 220px; }
 .drt-adhoc-title { flex: 1 1 220px; }
+.drt-adhoc-reminder { flex-direction: row !important; align-items: center; gap: 6px !important; }
 
 .drt-subtask-panel td { background: #fafbfc; padding: 12px 16px; border-top: none; }
 .drt-subtask-box { border-left: 3px solid #ccd0d4; padding-left: 14px; }
@@ -60,6 +63,8 @@
 
 .drt-editor-columns { display: flex; gap: 24px; flex-wrap: wrap; }
 .drt-editor-columns > div { flex: 1 1 420px; }
+.drt-slot-auto-done { background: #eef9f0; }
+.drt-auto-done-badge { display: inline-block; font-size: 11px; font-weight: 600; color: #2f9e44; margin-right: 6px; }
 
 .drt-report-filters { display: flex; gap: 16px; align-items: flex-end; margin: 16px 0; }
 .drt-report-filters label { display: flex; flex-direction: column; font-weight: 600; font-size: 12px; gap: 4px; }
