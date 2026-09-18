@@ -58,6 +58,7 @@ class DRT_DB {
 			billable TINYINT(1) NOT NULL DEFAULT 0,
 			actual_start DATETIME NULL,
 			actual_end DATETIME NULL,
+			banked_seconds INT NOT NULL DEFAULT 0,
 			duration_seconds INT NULL,
 			notes TEXT NULL,
 			created_at DATETIME NOT NULL,
@@ -76,6 +77,7 @@ class DRT_DB {
 			billable TINYINT(1) NOT NULL DEFAULT 0,
 			actual_start DATETIME NULL,
 			actual_end DATETIME NULL,
+			banked_seconds INT NOT NULL DEFAULT 0,
 			duration_seconds INT NULL,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
@@ -453,22 +455,65 @@ class DRT_DB {
 			return false;
 		}
 		$now      = current_time( 'mysql' );
-		$duration = null;
+		$duration = (int) $subtask->banked_seconds;
 		if ( ! empty( $subtask->actual_start ) ) {
-			$duration = max( 0, strtotime( $now ) - strtotime( $subtask->actual_start ) );
+			$duration += max( 0, strtotime( $now ) - strtotime( $subtask->actual_start ) );
 		}
 		$wpdb->update(
 			self::subtasks_table(),
 			array(
+				'actual_start'     => null,
 				'actual_end'       => $now,
+				'banked_seconds'   => 0,
 				'duration_seconds' => $duration,
 				'updated_at'       => $now,
+			),
+			array( 'id' => $id ),
+			array( '%s', '%s', '%d', '%d', '%s' ),
+			array( '%d' )
+		);
+		return $duration;
+	}
+
+	/**
+	 * Pause a running subtask's timer — banks the elapsed time of the
+	 * current segment and stops it from counting, without finishing the
+	 * subtask. resume_subtask() (or add_subtask picking it back up isn't
+	 * applicable here — use resume_subtask) starts a new segment on top
+	 * of the banked total.
+	 */
+	public static function pause_subtask( $id ) {
+		global $wpdb;
+		$subtask = self::get_subtask( $id );
+		if ( ! $subtask || empty( $subtask->actual_start ) ) {
+			return false;
+		}
+		$now     = current_time( 'mysql' );
+		$banked  = (int) $subtask->banked_seconds + max( 0, strtotime( $now ) - strtotime( $subtask->actual_start ) );
+		$wpdb->update(
+			self::subtasks_table(),
+			array(
+				'actual_start'   => null,
+				'banked_seconds' => $banked,
+				'updated_at'     => $now,
 			),
 			array( 'id' => $id ),
 			array( '%s', '%d', '%s' ),
 			array( '%d' )
 		);
-		return $duration;
+		return $banked;
+	}
+
+	public static function resume_subtask( $id ) {
+		global $wpdb;
+		$now = current_time( 'mysql' );
+		return $wpdb->update(
+			self::subtasks_table(),
+			array( 'actual_start' => $now, 'actual_end' => null, 'updated_at' => $now ),
+			array( 'id' => $id ),
+			array( '%s', '%s', '%s' ),
+			array( '%d' )
+		);
 	}
 
 	public static function set_subtask_billable( $id, $billable ) {

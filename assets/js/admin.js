@@ -47,6 +47,19 @@
 		return isNaN(t) ? null : t;
 	}
 
+	// Live elapsed = banked (already paused) seconds + however long the
+	// current segment has been running (0 if not currently running).
+	function trackedSeconds(bankedSeconds, actualStart, nowMs) {
+		var total = parseInt(bankedSeconds, 10) || 0;
+		if (actualStart) {
+			var startMs = mysqlDatetimeToMs(actualStart);
+			if (startMs) {
+				total += Math.max(0, (nowMs - startMs) / 1000);
+			}
+		}
+		return total;
+	}
+
 	function notifyPermissionGranted() {
 		return ( 'Notification' in window ) && Notification.permission === 'granted';
 	}
@@ -57,7 +70,7 @@
 		}
 		try {
 			new Notification( 'Slot ended: ' + title, {
-				body: 'Scheduled ' + (startStr || '').substring(0, 5) + '\u2013' + (endStr || '').substring(0, 5) + '. Mark it Done or Missed.'
+				body: 'Scheduled ' + (startStr || '').substring(0, 5) + '\u2013' + (endStr || '').substring(0, 5) + '. Mark it Done if you did it.'
 			} );
 		} catch (e) {
 			// Some browsers throw if Notification is called outside a
@@ -97,15 +110,19 @@
 			var end = timeStringToSeconds($row.data('end'));
 			var status = $row.data('status');
 			var actualStart = $row.attr('data-actual-start');
+			var bankedSeconds = $row.attr('data-banked-seconds');
 			var loggedDuration = $row.attr('data-logged-duration');
+			var isDone = (status === 'done');
+			var isRunning = !!actualStart && !isDone;
 
 			var isFuture = nowSec < start;
 			var isActive = nowSec >= start && nowSec < end;
 			var isPast = ! isFuture && ! isActive;
 
 			$row.toggleClass('drt-active', isActive);
+			$row.toggleClass('drt-row-running', isRunning);
 
-			if (isActive && status !== 'done') {
+			if (isActive && !isDone) {
 				activeSlot = {
 					title: $row.find('.drt-title').text(),
 					remaining: end - nowSec
@@ -118,7 +135,7 @@
 				notifiedEnded[logId] = isPast; // seed: don't notify for slots already past on page load
 			} else if (isPast && !notifiedEnded[logId]) {
 				notifiedEnded[logId] = true;
-				if (status !== 'done') {
+				if (!isDone) {
 					notifySlotEnded($row.find('.drt-title').text(), $row.data('start'), $row.data('end'));
 				}
 			}
@@ -128,7 +145,7 @@
 			// in this browser tab, until Start is clicked or it's Done —
 			// mirrors the server-side email reminder, for when this tab
 			// happens to be open.
-			if ($row.attr('data-remind') === '1' && status !== 'done' && !actualStart && !isFuture) {
+			if ($row.attr('data-remind') === '1' && !isDone && !actualStart && !isFuture) {
 				var lastFired = reminderLastFired[logId];
 				if (lastFired === undefined || (nowMs - lastFired) >= 5 * 60 * 1000) {
 					reminderLastFired[logId] = nowMs;
@@ -139,15 +156,15 @@
 			var $timer = $row.find('.drt-timer');
 			var $statusLabel = $row.find('.drt-status-label');
 
-			$timer.removeClass('drt-timer-live drt-timer-future drt-timer-past drt-timer-done drt-timer-ambient');
+			$timer.removeClass('drt-timer-live drt-timer-future drt-timer-past drt-timer-done drt-timer-ambient drt-timer-paused');
 
-			if (status === 'done') {
+			if (isDone) {
 				var secs = parseInt(loggedDuration, 10);
 				$timer.text('✓ ' + (isNaN(secs) ? '—' : formatHMS(secs)) + ' logged').addClass('drt-timer-done');
-			} else if (actualStart) {
-				var startMs = mysqlDatetimeToMs(actualStart);
-				var elapsed = startMs ? (nowMs - startMs) / 1000 : 0;
-				$timer.text('recording ' + formatHMS(elapsed)).addClass('drt-timer-live');
+			} else if (isRunning) {
+				$timer.text('recording ' + formatHMS(trackedSeconds(bankedSeconds, actualStart, nowMs))).addClass('drt-timer-live');
+			} else if (parseInt(bankedSeconds, 10) > 0) {
+				$timer.text('paused at ' + formatHMS(bankedSeconds)).addClass('drt-timer-paused');
 			} else if (isFuture) {
 				$timer.text('starts in ' + formatHMS(start - nowSec)).addClass('drt-timer-future');
 			} else if (isActive) {
@@ -157,7 +174,7 @@
 			}
 
 			$row.removeClass('drt-status-done drt-status-missed-final drt-status-upcoming drt-status-inprogress');
-			if (status === 'done') {
+			if (isDone) {
 				$statusLabel.text('Done');
 				$row.addClass('drt-status-done');
 			} else if (isFuture) {
@@ -170,6 +187,17 @@
 				$statusLabel.text('Missed');
 				$row.addClass('drt-status-missed-final');
 			}
+
+			// Button visibility: Start/Resume vs Pause vs Done/Undo.
+			var $startBtn = $row.find('.drt-btn-start');
+			var $pauseBtn = $row.find('.drt-btn-pause');
+			if ($startBtn.length) {
+				$startBtn.toggle(!isRunning && !isDone);
+				$startBtn.find('.drt-btn-label').text(parseInt(bankedSeconds, 10) > 0 ? 'Resume' : 'Start');
+				$pauseBtn.toggle(isRunning);
+			}
+			$row.find('.drt-btn-done').toggleClass('drt-btn-active-done', isDone);
+			$row.find('.drt-btn-undo-done').toggle(isDone);
 		});
 
 		if (activeSlot) {
@@ -182,18 +210,25 @@
 			var $row = $(this);
 			var actualStart = $row.attr('data-actual-start');
 			var actualEnd = $row.attr('data-actual-end');
+			var bankedSeconds = $row.attr('data-banked-seconds');
+			var isRunning = !!actualStart && !actualEnd;
+			var isPaused = !actualStart && !actualEnd && parseInt(bankedSeconds, 10) > 0;
 			var $timer = $row.find('.drt-subtask-timer');
 
 			if (actualEnd) {
 				var d = parseInt($row.attr('data-duration'), 10);
 				$timer.text(isNaN(d) ? '—' : formatHMS(d) + ' logged');
-			} else if (actualStart) {
-				var startMs = mysqlDatetimeToMs(actualStart);
-				var elapsed = startMs ? (nowMs - startMs) / 1000 : 0;
-				$timer.text(formatHMS(elapsed) + ' running');
+			} else if (isRunning) {
+				$timer.text(formatHMS(trackedSeconds(bankedSeconds, actualStart, nowMs)) + ' running');
+			} else if (isPaused) {
+				$timer.text(formatHMS(bankedSeconds) + ' paused');
 			} else {
 				$timer.text('—');
 			}
+
+			$row.find('.drt-btn-pause-subtask').toggle(isRunning);
+			$row.find('.drt-btn-resume-subtask').toggle(isPaused);
+			$row.find('.drt-btn-stop-subtask').toggle(isRunning || isPaused);
 		});
 	}
 
@@ -212,29 +247,40 @@
 		$('.drt-subtask-panel[data-panel-for="' + logId + '"]').show();
 	}
 
-	function setStoredStatus($row, status, extra) {
-		extra = extra || {};
-		$row.data('status', status);
-		$row.attr('data-status', status);
-		if ('actualStart' in extra) {
-			$row.attr('data-actual-start', extra.actualStart || '');
+	function setRowState($row, fields) {
+		// fields may include: status, actualStart, bankedSeconds, loggedDuration
+		if ('status' in fields) {
+			$row.data('status', fields.status);
+			$row.attr('data-status', fields.status);
 		}
-		if ('loggedDuration' in extra) {
-			$row.attr('data-logged-duration', extra.loggedDuration == null ? '' : extra.loggedDuration);
+		if ('actualStart' in fields) {
+			$row.attr('data-actual-start', fields.actualStart || '');
+		}
+		if ('bankedSeconds' in fields) {
+			$row.attr('data-banked-seconds', fields.bankedSeconds == null ? 0 : fields.bankedSeconds);
+		}
+		if ('loggedDuration' in fields) {
+			$row.attr('data-logged-duration', fields.loggedDuration == null ? '' : fields.loggedDuration);
 			var logId = $row.data('log-id');
 			var $durationInput = $('.drt-subtask-panel[data-panel-for="' + logId + '"] .drt-duration-input');
-			if (extra.loggedDuration != null && $durationInput.length) {
-				$durationInput.val(Math.round((extra.loggedDuration / 60) * 10) / 10);
+			if (fields.loggedDuration != null && $durationInput.length) {
+				$durationInput.val(Math.round((fields.loggedDuration / 60) * 10) / 10);
 			}
 		}
-		$row.find('.drt-btn-done').toggleClass('drt-btn-active-done', status === 'done');
-		$row.find('.drt-btn-missed').toggleClass('drt-btn-active-missed', status === 'missed');
+		tickRows();
 	}
 
 	$(document).on('click', '.drt-btn-start', function () {
 		var $row = $(this).closest('.drt-row');
 		ajax('drt_start_task', { log_id: $row.data('log-id') }, function (data) {
-			setStoredStatus($row, $row.data('status'), { actualStart: data.actual_start });
+			setRowState($row, { actualStart: data.actual_start });
+		});
+	});
+
+	$(document).on('click', '.drt-btn-pause', function () {
+		var $row = $(this).closest('.drt-row');
+		ajax('drt_pause_task', { log_id: $row.data('log-id') }, function (data) {
+			setRowState($row, { actualStart: '', bankedSeconds: data.banked_seconds });
 		});
 	});
 
@@ -250,15 +296,15 @@
 		}
 
 		ajax('drt_mark_done', { log_id: logId }, function (data) {
-			setStoredStatus($row, 'done', { loggedDuration: data.duration_seconds });
+			setRowState($row, { status: 'done', actualStart: '', bankedSeconds: 0, loggedDuration: data.duration_seconds });
 			openPanel(logId);
 		});
 	});
 
-	$(document).on('click', '.drt-btn-missed', function () {
+	$(document).on('click', '.drt-btn-undo-done', function () {
 		var $row = $(this).closest('.drt-row');
 		ajax('drt_mark_missed', { log_id: $row.data('log-id') }, function () {
-			setStoredStatus($row, 'missed', { actualStart: '', loggedDuration: '' });
+			setRowState($row, { status: 'missed', actualStart: '', bankedSeconds: 0, loggedDuration: '' });
 		});
 	});
 
@@ -296,11 +342,12 @@
 				return;
 			}
 			ajax('drt_update_duration', { log_id: logId, minutes: minutes }, function (data) {
-				$mainRow.attr('data-logged-duration', data.duration_seconds);
+				var fields = { loggedDuration: data.duration_seconds };
 				// Editing the time implies the slot is done.
 				if ($mainRow.data('status') !== 'done') {
-					setStoredStatus($mainRow, 'done', {});
+					fields.status = 'done';
 				}
+				setRowState($mainRow, fields);
 				$saved.stop(true).show().delay(1200).fadeOut();
 			});
 		}, 600);
@@ -329,14 +376,18 @@
 
 		ajax('drt_add_subtask', payload, function (data) {
 			var isCompleted = data.duration_seconds !== null && data.duration_seconds !== undefined && data.duration_seconds !== '';
-			var stopBtnStyle = isCompleted ? ' style="display:none;"' : '';
 
 			var $newRow = $(
-				'<tr class="drt-subtask-row" data-subtask-id="' + data.id + '" data-actual-start="' + (data.actual_start || '') + '" data-actual-end="' + (data.actual_end || '') + '" data-duration="' + (data.duration_seconds || '') + '">' +
+				'<tr class="drt-subtask-row" data-subtask-id="' + data.id + '" data-actual-start="' + (data.actual_start || '') + '" data-actual-end="' + (data.actual_end || '') + '" data-banked-seconds="0" data-duration="' + (data.duration_seconds || '') + '">' +
 					'<td>' + $('<div>').text(data.title).html() + '</td>' +
 					'<td><label class="drt-billable-toggle"><input type="checkbox" class="drt-subtask-billable" ' + (data.billable ? 'checked' : '') + '><span>Billable</span></label></td>' +
 					'<td class="drt-subtask-timer">—</td>' +
-					'<td><button class="button-link drt-btn-stop-subtask"' + stopBtnStyle + '>Stop</button> <button class="button-link drt-btn-delete-subtask" title="Delete">✕</button></td>' +
+					'<td class="drt-subtask-row-actions">' +
+						'<button class="button drt-btn-ghost drt-btn-icon-only drt-btn-pause-subtask" title="Pause"' + (isCompleted ? ' style="display:none;"' : '') + '><span class="dashicons dashicons-controls-pause"></span></button>' +
+						'<button class="button drt-btn-ghost drt-btn-icon-only drt-btn-resume-subtask" title="Resume" style="display:none;"><span class="dashicons dashicons-controls-play"></span></button>' +
+						'<button class="button drt-btn-ghost drt-btn-icon-only drt-btn-stop-subtask" title="Stop &amp; log"' + (isCompleted ? ' style="display:none;"' : '') + '><span class="dashicons dashicons-yes-alt"></span></button>' +
+						'<button class="button drt-btn-ghost drt-btn-danger-text drt-btn-icon-only drt-btn-delete-subtask" title="Delete"><span class="dashicons dashicons-trash"></span></button>' +
+					'</td>' +
 				'</tr>'
 			);
 			$box.find('.drt-subtask-list').append($newRow);
@@ -345,17 +396,33 @@
 			$box.find('.drt-subtask-billable-input').prop('checked', false);
 
 			var $mainRow = $('.drt-row[data-log-id="' + logId + '"]');
-			var $countEl = $mainRow.find('.drt-subtask-count');
+			var $countEl = $mainRow.find('.drt-subtask-count-badge');
 			$countEl.text((parseInt($countEl.text(), 10) || 0) + 1);
+		});
+	});
+
+	$(document).on('click', '.drt-btn-pause-subtask', function () {
+		var $row = $(this).closest('.drt-subtask-row');
+		ajax('drt_pause_subtask', { subtask_id: $row.data('subtask-id') }, function (data) {
+			$row.attr('data-actual-start', '');
+			$row.attr('data-banked-seconds', data.banked_seconds);
+		});
+	});
+
+	$(document).on('click', '.drt-btn-resume-subtask', function () {
+		var $row = $(this).closest('.drt-subtask-row');
+		ajax('drt_resume_subtask', { subtask_id: $row.data('subtask-id') }, function (data) {
+			$row.attr('data-actual-start', data.actual_start);
 		});
 	});
 
 	$(document).on('click', '.drt-btn-stop-subtask', function () {
 		var $row = $(this).closest('.drt-subtask-row');
 		ajax('drt_stop_subtask', { subtask_id: $row.data('subtask-id') }, function (data) {
+			$row.attr('data-actual-start', '');
 			$row.attr('data-actual-end', 'x');
+			$row.attr('data-banked-seconds', 0);
 			$row.attr('data-duration', data.duration_seconds);
-			$row.find('.drt-btn-stop-subtask').hide();
 		});
 	});
 
@@ -375,7 +442,7 @@
 		ajax('drt_delete_subtask', { subtask_id: $row.data('subtask-id') }, function () {
 			$row.remove();
 			var $mainRow = $('.drt-row[data-log-id="' + logId + '"]');
-			var $countEl = $mainRow.find('.drt-subtask-count');
+			var $countEl = $mainRow.find('.drt-subtask-count-badge');
 			$countEl.text(Math.max(0, (parseInt($countEl.text(), 10) || 0) - 1));
 		});
 	});

@@ -58,11 +58,11 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 
 	<p class="description">
 		<?php if ( $is_today ) : ?>
-			The current slot shows how much time has elapsed automatically — click <strong>Start</strong> only if you want to time your own actual work separately, then <strong>Done</strong> to log it.
+			The current slot shows how much time has elapsed automatically. Click <strong>Start</strong> to time your own actual work, <strong>Pause</strong> to stop the clock without finishing, and <strong>Done</strong> to log it.
 		<?php else : ?>
 			Viewing a <?php echo $date < $today_str ? 'past' : 'future'; ?> day — live timers and notifications only run on Today.
 		<?php endif; ?>
-		Every slot defaults to <strong>Missed</strong> until you tick Done, and you can flip either button any time. Click Done (or <strong>+ Tasks</strong>) to edit the logged time or add billable tasks inside a slot.
+		Every slot defaults to <strong>Missed</strong> automatically — there's nothing to click for that. Click <strong>Done</strong> (or <strong>+ Tasks</strong>) to edit the logged time or add billable tasks inside a slot; a small <strong>Undo</strong> link appears next to Done if you need to flip it back.
 		Use <strong>+ Add a task for this day</strong> below to schedule something just for <?php echo esc_html( $date_label ); ?> — it won't affect any other day.
 	</p>
 
@@ -85,6 +85,9 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 			$subtasks     = isset( $subtasks_map[ $log->id ] ) ? $subtasks_map[ $log->id ] : array();
 			$minutes_now  = $log->duration_seconds ? round( $log->duration_seconds / 60, 1 ) : '';
 			$is_adhoc     = empty( $log->slot_id );
+			$is_done      = ( 'done' === $log->status );
+			$is_paused    = ( empty( $log->actual_start ) && ! empty( $log->banked_seconds ) && ! $is_done );
+			$is_running   = ( ! empty( $log->actual_start ) && ! $is_done );
 
 			// On non-today views there's no live JS tick to fill these in,
 			// so compute a sensible static status/timer server-side.
@@ -92,7 +95,7 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 			$static_status    = '—';
 			$static_timer     = '—';
 			if ( ! $is_today ) {
-				if ( 'done' === $log->status ) {
+				if ( $is_done ) {
 					$static_status    = 'Done';
 					$static_row_class = 'drt-status-done';
 					$static_timer     = $log->duration_seconds ? '✓ ' . gmdate( 'H:i:s', (int) $log->duration_seconds ) . ' logged' : '✓ logged';
@@ -111,6 +114,7 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 				data-end="<?php echo esc_attr( $log->scheduled_end ); ?>"
 				data-status="<?php echo esc_attr( $log->status ); ?>"
 				data-actual-start="<?php echo esc_attr( $log->actual_start ); ?>"
+				data-banked-seconds="<?php echo esc_attr( (int) $log->banked_seconds ); ?>"
 				data-logged-duration="<?php echo esc_attr( $log->duration_seconds ); ?>"
 				data-remind="<?php echo esc_attr( ! empty( $log->remind ) ? 1 : 0 ); ?>">
 				<td class="drt-time"><?php echo esc_html( substr( $log->scheduled_start, 0, 5 ) . '–' . substr( $log->scheduled_end, 0, 5 ) ); ?></td>
@@ -125,13 +129,27 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 				<td class="drt-timer"><?php echo esc_html( $static_timer ); ?></td>
 				<td class="drt-actions">
 					<?php if ( $is_today ) : ?>
-						<button class="button drt-btn-start">Start</button>
+						<button class="button drt-btn-outline drt-btn-start" style="<?php echo $is_running ? 'display:none;' : ''; ?>">
+							<span class="dashicons dashicons-controls-play"></span><span class="drt-btn-label"><?php echo $is_paused ? 'Resume' : 'Start'; ?></span>
+						</button>
+						<button class="button drt-btn-warn drt-btn-pause" style="<?php echo $is_running ? '' : 'display:none;'; ?>">
+							<span class="dashicons dashicons-controls-pause"></span><span class="drt-btn-label">Pause</span>
+						</button>
 					<?php endif; ?>
-					<button class="button drt-btn-done <?php echo ( 'done' === $log->status ) ? 'drt-btn-active-done' : ''; ?>">Done</button>
-					<button class="button drt-btn-missed <?php echo ( 'missed' === $log->status ) ? 'drt-btn-active-missed' : ''; ?>">Missed</button>
-					<button class="button-link drt-btn-toggle-subtasks">+ Tasks (<span class="drt-subtask-count"><?php echo count( $subtasks ); ?></span>)</button>
+					<button class="button drt-btn-done <?php echo $is_done ? 'drt-btn-active-done' : ''; ?>">
+						<span class="dashicons dashicons-yes-alt"></span><span class="drt-btn-label">Done</span>
+					</button>
+					<button class="button drt-btn-ghost drt-btn-toggle-subtasks" title="Break this slot into individually-timed, billable tasks">
+						<span class="dashicons dashicons-list-view"></span> Tasks
+						<span class="drt-subtask-count-badge"><?php echo count( $subtasks ); ?></span>
+					</button>
+					<button class="button drt-btn-ghost drt-btn-danger-text drt-btn-undo-done" style="<?php echo $is_done ? '' : 'display:none;'; ?>" title="Flip this back to Missed">
+						<span class="dashicons dashicons-undo"></span> Undo
+					</button>
 					<?php if ( $is_adhoc ) : ?>
-						<a class="button-link drt-btn-delete-adhoc" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_delete_adhoc_log&id=' . $log->id . '&date=' . $date ), 'drt_delete_adhoc_log' ) ); ?>" onclick="return confirm('Remove this one-off task?');" title="Remove this one-off task">✕ Remove</a>
+						<a class="button drt-btn-ghost drt-btn-danger-text drt-btn-icon-only drt-btn-delete-adhoc" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_delete_adhoc_log&id=' . $log->id . '&date=' . $date ), 'drt_delete_adhoc_log' ) ); ?>" onclick="return confirm('Remove this one-off task?');" title="Remove this one-off task">
+							<span class="dashicons dashicons-trash"></span>
+						</a>
 					<?php endif; ?>
 				</td>
 				<td class="drt-notes-cell">
@@ -155,15 +173,20 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 									<th>Task</th>
 									<th style="width:90px;">Billable</th>
 									<th style="width:150px;">Timer</th>
-									<th style="width:90px;"></th>
+									<th style="width:150px;"></th>
 								</tr>
 							</thead>
 							<tbody class="drt-subtask-list">
 							<?php foreach ( $subtasks as $st ) : ?>
+								<?php
+								$st_running = ! empty( $st->actual_start ) && empty( $st->actual_end );
+								$st_paused  = empty( $st->actual_start ) && ! empty( $st->banked_seconds ) && empty( $st->actual_end );
+								?>
 								<tr class="drt-subtask-row"
 									data-subtask-id="<?php echo esc_attr( $st->id ); ?>"
 									data-actual-start="<?php echo esc_attr( $st->actual_start ); ?>"
 									data-actual-end="<?php echo esc_attr( $st->actual_end ); ?>"
+									data-banked-seconds="<?php echo esc_attr( (int) $st->banked_seconds ); ?>"
 									data-duration="<?php echo esc_attr( $st->duration_seconds ); ?>">
 									<td><?php echo esc_html( $st->title ); ?></td>
 									<td>
@@ -173,9 +196,11 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 										</label>
 									</td>
 									<td class="drt-subtask-timer">—</td>
-									<td>
-										<button class="button-link drt-btn-stop-subtask" <?php echo $st->actual_end ? 'style="display:none;"' : ''; ?>>Stop</button>
-										<button class="button-link drt-btn-delete-subtask" title="Delete">✕</button>
+									<td class="drt-subtask-row-actions">
+										<button class="button drt-btn-ghost drt-btn-icon-only drt-btn-pause-subtask" style="<?php echo $st_running ? '' : 'display:none;'; ?>" title="Pause"><span class="dashicons dashicons-controls-pause"></span></button>
+										<button class="button drt-btn-ghost drt-btn-icon-only drt-btn-resume-subtask" style="<?php echo $st_paused ? '' : 'display:none;'; ?>" title="Resume"><span class="dashicons dashicons-controls-play"></span></button>
+										<button class="button drt-btn-ghost drt-btn-icon-only drt-btn-stop-subtask" style="<?php echo $st->actual_end ? 'display:none;' : ''; ?>" title="Stop &amp; log"><span class="dashicons dashicons-yes-alt"></span></button>
+										<button class="button drt-btn-ghost drt-btn-danger-text drt-btn-icon-only drt-btn-delete-subtask" title="Delete"><span class="dashicons dashicons-trash"></span></button>
 									</td>
 								</tr>
 							<?php endforeach; ?>
@@ -188,9 +213,9 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 								<input type="checkbox" class="drt-subtask-billable-input">
 								<span>Billable</span>
 							</label>
-							<button class="button button-primary drt-btn-add-subtask">Add</button>
+							<button class="button button-primary drt-btn-add-subtask"><span class="dashicons dashicons-plus-alt2"></span> Add</button>
 						</div>
-						<p class="description" style="margin-top:6px;">Leave minutes blank to start a live timer instead (stop it later); fill it in to log a task with an exact time right away.</p>
+						<p class="description" style="margin-top:6px;">Leave minutes blank to start a live timer instead (pause/stop it later); fill it in to log a task with an exact time right away.</p>
 					</div>
 				</td>
 			</tr>

@@ -6,29 +6,30 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! function_exists( 'drt_render_slot_table' ) ) {
 	function drt_render_slot_table( $slots ) {
 		?>
-		<table class="widefat striped">
+		<table class="drt-table">
 			<thead>
-				<tr><th>Time</th><th>Title</th><th>Category</th><th style="width:110px;">Auto Done</th><th></th></tr>
+				<tr><th>Time</th><th>Title</th><th>Category</th><th style="width:150px;">Auto Done</th><th style="width:90px;"></th></tr>
 			</thead>
 			<tbody>
 			<?php foreach ( $slots as $slot ) : ?>
 				<?php $is_auto_done = ! empty( $slot->auto_done ); ?>
 				<tr class="<?php echo $is_auto_done ? 'drt-slot-auto-done' : ''; ?>">
-					<td><?php echo esc_html( substr( $slot->start_time, 0, 5 ) . '–' . substr( $slot->end_time, 0, 5 ) ); ?></td>
-					<td><?php echo esc_html( $slot->title ); ?></td>
+					<td class="drt-time"><?php echo esc_html( substr( $slot->start_time, 0, 5 ) . '–' . substr( $slot->end_time, 0, 5 ) ); ?></td>
+					<td class="drt-title"><?php echo esc_html( $slot->title ); ?></td>
 					<td><?php echo esc_html( ucfirst( $slot->category ) ); ?></td>
 					<td>
 						<?php if ( $is_auto_done ) : ?>
-							<span class="drt-auto-done-badge" title="Every future day with this slot is created already marked Done">✓ Auto Done</span>
+							<span class="drt-auto-done-badge" title="Every future day with this slot is created already marked Done">✓ Auto</span>
 						<?php endif; ?>
-						<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_toggle_auto_done&id=' . $slot->id . '&auto_done=' . ( $is_auto_done ? 0 : 1 ) ), 'drt_toggle_auto_done' ) ); ?>">
+						<a class="button drt-btn-ghost <?php echo $is_auto_done ? 'drt-btn-danger-text' : 'drt-btn-outline'; ?>" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_toggle_auto_done&id=' . $slot->id . '&auto_done=' . ( $is_auto_done ? 0 : 1 ) ), 'drt_toggle_auto_done' ) ); ?>">
 							<?php echo $is_auto_done ? 'Turn off' : 'Mark Auto Done'; ?>
 						</a>
 					</td>
 					<td>
-						<a href="<?php echo esc_url( admin_url( 'admin.php?page=drt-editor&edit=' . $slot->id ) ); ?>">Edit</a>
-						|
-						<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_delete_slot&id=' . $slot->id ), 'drt_delete_slot' ) ); ?>" onclick="return confirm('Remove this slot?');">Delete</a>
+						<div class="drt-table-actions">
+							<a class="button drt-btn-ghost drt-btn-icon-only" href="<?php echo esc_url( admin_url( 'admin.php?page=drt-editor&edit=' . $slot->id ) ); ?>" title="Edit"><span class="dashicons dashicons-edit"></span></a>
+							<a class="button drt-btn-ghost drt-btn-danger-text drt-btn-icon-only" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_delete_slot&id=' . $slot->id ), 'drt_delete_slot' ) ); ?>" onclick="return confirm('Remove this slot?');" title="Delete"><span class="dashicons dashicons-trash"></span></a>
+						</div>
 					</td>
 				</tr>
 			<?php endforeach; ?>
@@ -72,55 +73,36 @@ $categories = array( 'work', 'eat', 'exercise', 'read', 'game', 'rest', 'other' 
 			</p>
 			<p>
 				This usually means the database table is out of date with the plugin files. Try:
-				<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_force_db_upgrade' ), 'drt_force_db_upgrade' ) ); ?>">Re-check database tables</a>
+				<a class="button drt-btn-outline" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_force_db_upgrade' ), 'drt_force_db_upgrade' ) ); ?>"><span class="dashicons dashicons-update"></span> Re-check database tables</a>
 			</p>
 		</div>
 	<?php endif; ?>
 
 	<h2><?php echo $edit_slot ? 'Edit Slot' : 'Add New Slot'; ?></h2>
-	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="drt-slot-form">
+	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="drt-slot-form-card">
 		<?php wp_nonce_field( 'drt_save_slot' ); ?>
 		<input type="hidden" name="action" value="drt_save_slot">
 		<input type="hidden" name="slot_id" value="<?php echo $edit_slot ? esc_attr( $edit_slot->id ) : 0; ?>">
-		<table class="form-table">
-			<tr>
-				<th>Day Type</th>
-				<td>
-					<select name="day_type">
-						<option value="weekday" <?php selected( $edit_slot ? $edit_slot->day_type : 'weekday', 'weekday' ); ?>>Weekday</option>
-						<option value="weekend" <?php selected( $edit_slot ? $edit_slot->day_type : '', 'weekend' ); ?>>Weekend</option>
-					</select>
-				</td>
-			</tr>
-			<tr>
-				<th>Start Time</th>
-				<td><input type="time" name="start_time" value="<?php echo $edit_slot ? esc_attr( substr( $edit_slot->start_time, 0, 5 ) ) : ''; ?>" required></td>
-			</tr>
-			<tr>
-				<th>End Time</th>
-				<td><input type="time" name="end_time" value="<?php echo $edit_slot ? esc_attr( substr( $edit_slot->end_time, 0, 5 ) ) : ''; ?>" required></td>
-			</tr>
-			<tr>
-				<th>Title</th>
-				<td><input type="text" name="title" class="regular-text" value="<?php echo $edit_slot ? esc_attr( $edit_slot->title ) : ''; ?>" required></td>
-			</tr>
-			<tr>
-				<th>Category</th>
-				<td>
-					<select name="category">
-						<?php foreach ( $categories as $cat ) : ?>
-							<option value="<?php echo esc_attr( $cat ); ?>" <?php selected( $edit_slot ? $edit_slot->category : 'other', $cat ); ?>><?php echo esc_html( ucfirst( $cat ) ); ?></option>
-						<?php endforeach; ?>
-					</select>
-				</td>
-			</tr>
-		</table>
-		<?php submit_button( $edit_slot ? 'Update Slot' : 'Add Slot' ); ?>
+		<label>Day Type
+			<select name="day_type">
+				<option value="weekday" <?php selected( $edit_slot ? $edit_slot->day_type : 'weekday', 'weekday' ); ?>>Weekday</option>
+				<option value="weekend" <?php selected( $edit_slot ? $edit_slot->day_type : '', 'weekend' ); ?>>Weekend</option>
+			</select>
+		</label>
+		<label>Start Time <input type="time" name="start_time" value="<?php echo $edit_slot ? esc_attr( substr( $edit_slot->start_time, 0, 5 ) ) : ''; ?>" required></label>
+		<label>End Time <input type="time" name="end_time" value="<?php echo $edit_slot ? esc_attr( substr( $edit_slot->end_time, 0, 5 ) ) : ''; ?>" required></label>
+		<label class="drt-adhoc-title">Title <input type="text" name="title" class="regular-text" value="<?php echo $edit_slot ? esc_attr( $edit_slot->title ) : ''; ?>" required></label>
+		<label>Category
+			<select name="category">
+				<?php foreach ( $categories as $cat ) : ?>
+					<option value="<?php echo esc_attr( $cat ); ?>" <?php selected( $edit_slot ? $edit_slot->category : 'other', $cat ); ?>><?php echo esc_html( ucfirst( $cat ) ); ?></option>
+				<?php endforeach; ?>
+			</select>
+		</label>
+		<button type="submit" class="button button-primary"><span class="dashicons dashicons-plus-alt2"></span> <?php echo $edit_slot ? 'Update Slot' : 'Add Slot'; ?></button>
 	</form>
 
-	<hr>
-
-	<h2 style="margin-bottom:4px;">Weekday &amp; Weekend Routine</h2>
+	<h2 style="margin-bottom:4px;margin-top:28px;">Weekday &amp; Weekend Routine</h2>
 	<p class="description">
 		<strong>Auto Done</strong> marks a slot as already completed the moment its daily entry is created — no click needed, and it never shows as Missed. It logs the slot's full scheduled length automatically. This is permanent until you click "Turn off" here, and only affects days not yet generated (days already showing in Day View keep whatever status they have).
 	</p>
@@ -135,9 +117,7 @@ $categories = array( 'work', 'eat', 'exercise', 'read', 'game', 'rest', 'other' 
 		</div>
 	</div>
 
-	<hr>
-
-	<h2>One-off tasks on specific dates</h2>
+	<h2 style="margin-top:32px;">One-off tasks on specific dates</h2>
 	<p class="description">
 		Add a task to a single date without touching the recurring weekday/weekend routine above — and optionally get a desktop reminder notification when it's time.
 	</p>
@@ -162,25 +142,26 @@ $categories = array( 'work', 'eat', 'exercise', 'read', 'game', 'rest', 'other' 
 		</label>
 		<label class="drt-adhoc-reminder"><input type="checkbox" name="remind" value="1"> Remind me</label>
 		<label class="drt-adhoc-reminder"><input type="checkbox" name="billable" value="1"> Billable</label>
-		<button type="submit" class="button button-primary">Add task</button>
+		<button type="submit" class="button button-primary"><span class="dashicons dashicons-plus-alt2"></span> Add task</button>
 	</form>
 
-	<h2>Upcoming one-off tasks</h2>
-	<table class="widefat striped">
-		<thead><tr><th>Date</th><th>Time</th><th>Title</th><th>Category</th><th>Billable</th><th>Reminder</th><th></th></tr></thead>
+	<h2 style="margin-top:28px;">Upcoming one-off tasks</h2>
+	<table class="drt-table">
+		<thead><tr><th>Date</th><th>Time</th><th>Title</th><th>Category</th><th>Billable</th><th>Reminder</th><th style="width:130px;"></th></tr></thead>
 		<tbody>
 		<?php foreach ( $upcoming_adhoc as $log ) : ?>
 			<tr>
 				<td><?php echo esc_html( $log->log_date ); ?></td>
-				<td><?php echo esc_html( substr( $log->scheduled_start, 0, 5 ) . '–' . substr( $log->scheduled_end, 0, 5 ) ); ?></td>
-				<td><?php echo esc_html( $log->title ); ?></td>
+				<td class="drt-time"><?php echo esc_html( substr( $log->scheduled_start, 0, 5 ) . '–' . substr( $log->scheduled_end, 0, 5 ) ); ?></td>
+				<td class="drt-title"><?php echo esc_html( $log->title ); ?></td>
 				<td><?php echo esc_html( ucfirst( $log->category ) ); ?></td>
 				<td><?php echo $log->billable ? '💰 Yes' : '—'; ?></td>
 				<td><?php echo $log->remind ? '🔔 On' : '—'; ?></td>
 				<td>
-					<a href="<?php echo esc_url( admin_url( 'admin.php?page=drt-today&date=' . $log->log_date ) ); ?>">View day</a>
-					|
-					<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_delete_adhoc_log&id=' . $log->id . '&date=' . $log->log_date . '&redirect=editor' ), 'drt_delete_adhoc_log' ) ); ?>" onclick="return confirm('Remove this task?');">Remove</a>
+					<div class="drt-table-actions">
+						<a class="button drt-btn-ghost drt-btn-icon-only" href="<?php echo esc_url( admin_url( 'admin.php?page=drt-today&date=' . $log->log_date ) ); ?>" title="View day"><span class="dashicons dashicons-calendar-alt"></span></a>
+						<a class="button drt-btn-ghost drt-btn-danger-text drt-btn-icon-only" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_delete_adhoc_log&id=' . $log->id . '&date=' . $log->log_date . '&redirect=editor' ), 'drt_delete_adhoc_log' ) ); ?>" onclick="return confirm('Remove this task?');" title="Remove"><span class="dashicons dashicons-trash"></span></a>
+					</div>
 				</td>
 			</tr>
 		<?php endforeach; ?>
@@ -191,7 +172,7 @@ $categories = array( 'work', 'eat', 'exercise', 'read', 'game', 'rest', 'other' 
 	</table>
 
 	<p class="description" style="margin-top:20px;">
-		<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_force_db_upgrade' ), 'drt_force_db_upgrade' ) ); ?>">Re-check database tables</a>
+		<a class="button drt-btn-ghost" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_force_db_upgrade' ), 'drt_force_db_upgrade' ) ); ?>"><span class="dashicons dashicons-update"></span> Re-check database tables</a>
 		— safe to click any time; adds any columns/tables the current plugin version needs without touching existing data. Use this after updating the plugin files if something stops saving.
 	</p>
 </div>

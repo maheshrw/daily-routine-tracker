@@ -9,7 +9,7 @@ if ( ! in_array( $range, array( 'day', 'week', 'month', 'year' ), true ) ) {
 	$range = 'week';
 }
 
-$summary = DRT_Reports::build_summary( $range, $ref_date );
+$summary  = DRT_Reports::build_summary( $range, $ref_date );
 $billable = DRT_Reports::build_billable_summary( $range, $ref_date );
 
 $category_colors = array(
@@ -30,7 +30,7 @@ foreach ( $summary['by_category'] as $cat_data ) {
 <div class="wrap drt-wrap">
 	<h1>Reports</h1>
 
-	<form method="get" class="drt-report-filters">
+	<form method="get" class="drt-report-filters-card">
 		<input type="hidden" name="page" value="drt-reports">
 		<label>
 			Range:
@@ -44,13 +44,12 @@ foreach ( $summary['by_category'] as $cat_data ) {
 			Anchor date:
 			<input type="date" name="ref_date" value="<?php echo esc_attr( $ref_date ); ?>">
 		</label>
-		<?php submit_button( 'Update', 'secondary', '', false ); ?>
+		<button type="submit" class="button button-primary"><span class="dashicons dashicons-filter"></span> Update</button>
+		<span class="drt-date-label" style="margin-left:auto;">
+			Showing <strong><?php echo esc_html( ucfirst( $range ) ); ?></strong>:
+			<?php echo esc_html( $summary['start'] === $summary['end'] ? $summary['start'] : $summary['start'] . ' → ' . $summary['end'] ); ?>
+		</span>
 	</form>
-
-	<p class="description">
-		Showing <strong><?php echo esc_html( ucfirst( $range ) ); ?></strong>:
-		<?php echo esc_html( $summary['start'] === $summary['end'] ? $summary['start'] : $summary['start'] . ' → ' . $summary['end'] ); ?>
-	</p>
 
 	<div class="drt-stat-cards">
 		<div class="drt-stat-card">
@@ -93,7 +92,7 @@ foreach ( $summary['by_category'] as $cat_data ) {
 
 	<?php if ( 'day' !== $range ) : ?>
 		<h2>Day by Day</h2>
-		<table class="widefat striped">
+		<table class="drt-table" style="margin-bottom:24px;">
 			<thead><tr><th>Date</th><th>Done</th><th>Total</th><th>Completion</th></tr></thead>
 			<tbody>
 			<?php foreach ( $summary['by_day'] as $day => $d ) : ?>
@@ -113,7 +112,7 @@ foreach ( $summary['by_category'] as $cat_data ) {
 
 	<h2>Billable / Invoicing (in-slot tasks and one-off tasks)</h2>
 	<p>
-		<a class="button" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_export_billable_csv&range=' . $range . '&ref_date=' . $ref_date ), 'drt_export_billable_csv' ) ); ?>">Export CSV for this range</a>
+		<a class="button drt-btn-outline drt-btn-export" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_export_billable_csv&range=' . $range . '&ref_date=' . $ref_date ), 'drt_export_billable_csv' ) ); ?>"><span class="dashicons dashicons-download"></span> Export CSV for this range</a>
 	</p>
 	<div class="drt-stat-cards">
 		<div class="drt-stat-card">
@@ -133,14 +132,14 @@ foreach ( $summary['by_category'] as $cat_data ) {
 			<span class="drt-stat-label">Non-Billable Time (h:m)</span>
 		</div>
 	</div>
-	<table class="widefat striped">
+	<table class="drt-table" style="margin-bottom:24px;">
 		<thead><tr><th>Date</th><th>Slot</th><th>Task</th><th>Billable</th><th>Duration</th></tr></thead>
 		<tbody>
 		<?php foreach ( array_reverse( $billable['entries'] ) as $entry ) : ?>
 			<tr>
 				<td><?php echo esc_html( $entry->log_date ); ?></td>
 				<td><?php echo esc_html( $entry->slot_title ); ?></td>
-				<td><?php echo esc_html( $entry->title ); ?></td>
+				<td class="drt-title"><?php echo esc_html( $entry->title ); ?></td>
 				<td><?php echo $entry->billable ? '<strong>Yes</strong>' : 'No'; ?></td>
 				<td><?php echo $entry->duration_seconds ? esc_html( gmdate( 'H:i:s', (int) $entry->duration_seconds ) ) : '— (running or not stopped)'; ?></td>
 			</tr>
@@ -152,14 +151,14 @@ foreach ( $summary['by_category'] as $cat_data ) {
 	</table>
 
 	<h2>Task Log</h2>
-	<table class="widefat striped">
+	<table class="drt-table">
 		<thead><tr><th>Date</th><th>Time</th><th>Task</th><th>Category</th><th>Status</th><th>Duration</th><th>Notes</th></tr></thead>
 		<tbody>
 		<?php foreach ( array_reverse( $summary['logs'] ) as $log ) : ?>
 			<tr>
 				<td><?php echo esc_html( $log->log_date ); ?></td>
-				<td><?php echo esc_html( substr( $log->scheduled_start, 0, 5 ) ); ?></td>
-				<td><?php echo esc_html( $log->title ); ?></td>
+				<td class="drt-time"><?php echo esc_html( substr( $log->scheduled_start, 0, 5 ) ); ?></td>
+				<td class="drt-title"><?php echo esc_html( $log->title ); ?></td>
 				<td><?php echo esc_html( ucfirst( $log->category ) ); ?></td>
 				<td><?php echo esc_html( ucfirst( str_replace( '_', ' ', $log->status ) ) ); ?></td>
 				<td><?php echo $log->duration_seconds ? esc_html( gmdate( 'H:i:s', $log->duration_seconds ) ) : '—'; ?></td>
