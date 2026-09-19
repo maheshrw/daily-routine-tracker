@@ -19,6 +19,7 @@ class DRT_Admin {
 		add_action( 'admin_post_drt_prune_old_logs', array( $this, 'handle_prune_old_logs' ) );
 		add_action( 'admin_post_drt_export_full_backup', array( $this, 'handle_export_full_backup' ) );
 		add_action( 'admin_post_drt_import_full_backup', array( $this, 'handle_import_full_backup' ) );
+		add_action( 'admin_post_drt_save_display_settings', array( $this, 'handle_save_display_settings' ) );
 	}
 
 	public function register_menu() {
@@ -431,6 +432,36 @@ class DRT_Admin {
 				'admin.php?page=drt-reports&imported=1&imp_routine=' . $result['routine']
 				. '&imp_logs=' . $result['logs'] . '&imp_subtasks=' . $result['subtasks']
 			)
+		);
+		exit;
+	}
+
+	/**
+	 * Save the Reports pagination preferences: rows per page (20/50/100)
+	 * and an optional hard cap on total rows ever paginated through.
+	 * Stored as options so they persist across visits.
+	 */
+	public function handle_save_display_settings() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Not allowed' );
+		}
+		check_admin_referer( 'drt_save_display_settings' );
+
+		$per_page = isset( $_POST['per_page'] ) ? (int) $_POST['per_page'] : 50;
+		if ( ! in_array( $per_page, array( 20, 50, 100 ), true ) ) {
+			$per_page = 50;
+		}
+		update_option( 'drt_logs_per_page', $per_page );
+
+		$hard_cap_raw = isset( $_POST['hard_cap'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['hard_cap'] ) ) ) : '';
+		$hard_cap     = ( '' === $hard_cap_raw ) ? '' : max( 1, (int) $hard_cap_raw );
+		update_option( 'drt_logs_hard_cap', $hard_cap );
+
+		$range    = isset( $_POST['range'] ) ? sanitize_text_field( wp_unslash( $_POST['range'] ) ) : 'week';
+		$ref_date = isset( $_POST['ref_date'] ) ? sanitize_text_field( wp_unslash( $_POST['ref_date'] ) ) : current_time( 'Y-m-d' );
+
+		wp_safe_redirect(
+			admin_url( 'admin.php?page=drt-reports&range=' . rawurlencode( $range ) . '&ref_date=' . rawurlencode( $ref_date ) . '&settings_saved=1' )
 		);
 		exit;
 	}

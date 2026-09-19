@@ -3,6 +3,31 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+if ( ! function_exists( 'drt_pagination_controls' ) ) {
+	/**
+	 * Prev/Next + "Page X of Y" controls. Preserves every other query
+	 * arg on the current URL (range, ref_date, the other table's page
+	 * param) and only changes $page_param.
+	 */
+	function drt_pagination_controls( $page_param, $current_page, $total_pages, $total_rows, $per_page ) {
+		if ( $total_rows === 0 ) {
+			return;
+		}
+		$first_row = ( ( $current_page - 1 ) * $per_page ) + 1;
+		$last_row  = min( $total_rows, $current_page * $per_page );
+		?>
+		<div class="drt-pagination">
+			<span class="drt-pagination-count">Showing <?php echo esc_html( $first_row ); ?>–<?php echo esc_html( $last_row ); ?> of <?php echo esc_html( $total_rows ); ?></span>
+			<?php if ( $total_pages > 1 ) : ?>
+				<a class="button drt-btn-ghost <?php echo ( 1 === $current_page ) ? 'disabled' : ''; ?>" href="<?php echo esc_url( add_query_arg( $page_param, max( 1, $current_page - 1 ) ) ); ?>">&larr; Prev</a>
+				<span class="drt-pagination-page">Page <?php echo esc_html( $current_page ); ?> of <?php echo esc_html( $total_pages ); ?></span>
+				<a class="button drt-btn-ghost <?php echo ( $current_page >= $total_pages ) ? 'disabled' : ''; ?>" href="<?php echo esc_url( add_query_arg( $page_param, min( $total_pages, $current_page + 1 ) ) ); ?>">Next &rarr;</a>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
+}
+
 $range    = isset( $_GET['range'] ) ? sanitize_text_field( wp_unslash( $_GET['range'] ) ) : 'week';
 $ref_date = isset( $_GET['ref_date'] ) ? sanitize_text_field( wp_unslash( $_GET['ref_date'] ) ) : current_time( 'Y-m-d' );
 if ( ! in_array( $range, array( 'day', 'week', 'month', 'year' ), true ) ) {
@@ -27,16 +52,39 @@ foreach ( $summary['by_category'] as $cat_data ) {
 	$max_cat_total = max( $max_cat_total, $cat_data['total'] );
 }
 
-// Cap what actually renders in the browser for large ranges (e.g. Year);
-// the full set is always available via CSV export regardless of this cap.
-$row_cap        = 200;
-$billable_all   = array_reverse( $billable['entries'] );
-$billable_total = count( $billable_all );
-$billable_shown = array_slice( $billable_all, 0, $row_cap );
+/*
+ * Pagination settings (persisted). These apply within whichever Range
+ * is selected above — Day/Week/Month/Year still decides the underlying
+ * data set; per-page and hard cap control how you browse *that* set.
+ * With no hard cap, every row in the selected range is reachable via
+ * paging; set one to permanently stop paginating past that many rows.
+ */
+$per_page = (int) get_option( 'drt_logs_per_page', 50 );
+if ( ! in_array( $per_page, array( 20, 50, 100 ), true ) ) {
+	$per_page = 50;
+}
+$hard_cap_opt = get_option( 'drt_logs_hard_cap', '' );
+$hard_cap     = ( '' === $hard_cap_opt ) ? null : (int) $hard_cap_opt;
 
-$logs_all   = array_reverse( $summary['logs'] );
+// Billable table paging.
+$billable_all = array_reverse( $billable['entries'] ); // most recent first
+if ( $hard_cap ) {
+	$billable_all = array_slice( $billable_all, 0, $hard_cap );
+}
+$billable_total = count( $billable_all );
+$billable_pages = max( 1, (int) ceil( $billable_total / $per_page ) );
+$billable_page  = isset( $_GET['bp'] ) ? max( 1, min( $billable_pages, (int) $_GET['bp'] ) ) : 1;
+$billable_shown = array_slice( $billable_all, ( $billable_page - 1 ) * $per_page, $per_page );
+
+// Task Log table paging.
+$logs_all = array_reverse( $summary['logs'] );
+if ( $hard_cap ) {
+	$logs_all = array_slice( $logs_all, 0, $hard_cap );
+}
 $logs_total = count( $logs_all );
-$logs_shown = array_slice( $logs_all, 0, $row_cap );
+$logs_pages = max( 1, (int) ceil( $logs_total / $per_page ) );
+$logs_page  = isset( $_GET['lp'] ) ? max( 1, min( $logs_pages, (int) $_GET['lp'] ) ) : 1;
+$logs_shown = array_slice( $logs_all, ( $logs_page - 1 ) * $per_page, $per_page );
 ?>
 <div class="wrap drt-wrap">
 	<h1>Reports</h1>
@@ -59,6 +107,9 @@ $logs_shown = array_slice( $logs_all, 0, $row_cap );
 	<?php if ( ! empty( $_GET['import_error'] ) ) : ?>
 		<div class="notice notice-error is-dismissible"><p><strong>Import failed:</strong> <?php echo esc_html( sanitize_text_field( wp_unslash( $_GET['import_error'] ) ) ); ?></p></div>
 	<?php endif; ?>
+	<?php if ( isset( $_GET['settings_saved'] ) ) : ?>
+		<div class="notice notice-success is-dismissible"><p>Pagination settings saved.</p></div>
+	<?php endif; ?>
 
 	<form method="get" class="drt-report-filters-card">
 		<input type="hidden" name="page" value="drt-reports">
@@ -78,6 +129,29 @@ $logs_shown = array_slice( $logs_all, 0, $row_cap );
 		<span class="drt-date-label" style="margin-left:auto;">
 			Showing <strong><?php echo esc_html( ucfirst( $range ) ); ?></strong>:
 			<?php echo esc_html( $summary['start'] === $summary['end'] ? $summary['start'] : $summary['start'] . ' → ' . $summary['end'] ); ?>
+		</span>
+	</form>
+
+	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="drt-report-filters-card" style="margin-top:10px;">
+		<?php wp_nonce_field( 'drt_save_display_settings' ); ?>
+		<input type="hidden" name="action" value="drt_save_display_settings">
+		<input type="hidden" name="range" value="<?php echo esc_attr( $range ); ?>">
+		<input type="hidden" name="ref_date" value="<?php echo esc_attr( $ref_date ); ?>">
+		<label>
+			Rows per page:
+			<select name="per_page">
+				<?php foreach ( array( 20, 50, 100 ) as $opt ) : ?>
+					<option value="<?php echo esc_attr( $opt ); ?>" <?php selected( $per_page, $opt ); ?>><?php echo esc_html( $opt ); ?></option>
+				<?php endforeach; ?>
+			</select>
+		</label>
+		<label>
+			Hard cap (optional):
+			<input type="number" name="hard_cap" min="1" step="1" placeholder="no limit" value="<?php echo esc_attr( $hard_cap_opt ); ?>" style="width:110px;">
+		</label>
+		<button type="submit" class="button drt-btn-outline"><span class="dashicons dashicons-saved"></span> Save</button>
+		<span class="drt-date-label" style="margin-left:auto;">
+			<?php echo $hard_cap ? 'Only the most recent ' . esc_html( $hard_cap ) . ' rows (per table) are ever paginated.' : 'No cap — every row in the selected range is reachable by paging.'; ?>
 		</span>
 	</form>
 
@@ -162,10 +236,7 @@ $logs_shown = array_slice( $logs_all, 0, $row_cap );
 			<span class="drt-stat-label">Non-Billable Time (h:m)</span>
 		</div>
 	</div>
-	<?php if ( $billable_total > $row_cap ) : ?>
-		<p class="description">Showing the most recent <?php echo esc_html( $row_cap ); ?> of <?php echo esc_html( $billable_total ); ?> entries in this range — use Export CSV above for the complete set.</p>
-	<?php endif; ?>
-	<table class="drt-table" style="margin-bottom:24px;">
+	<table class="drt-table" style="margin-bottom:8px;">
 		<thead><tr><th>Date</th><th>Slot</th><th>Task</th><th>Billable</th><th>Duration</th></tr></thead>
 		<tbody>
 		<?php foreach ( $billable_shown as $entry ) : ?>
@@ -182,15 +253,13 @@ $logs_shown = array_slice( $logs_all, 0, $row_cap );
 		<?php endif; ?>
 		</tbody>
 	</table>
+	<?php drt_pagination_controls( 'bp', $billable_page, $billable_pages, $billable_total, $per_page ); ?>
 
-	<h2>Task Log</h2>
+	<h2 style="margin-top:28px;">Task Log</h2>
 	<p>
 		<a class="button drt-btn-outline drt-btn-export" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_export_task_log_csv&range=' . $range . '&ref_date=' . $ref_date ), 'drt_export_task_log_csv' ) ); ?>"><span class="dashicons dashicons-download"></span> Export CSV for this range</a>
 	</p>
-	<?php if ( $logs_total > $row_cap ) : ?>
-		<p class="description">Showing the most recent <?php echo esc_html( $row_cap ); ?> of <?php echo esc_html( $logs_total ); ?> entries in this range — use Export CSV above for the complete set.</p>
-	<?php endif; ?>
-	<table class="drt-table">
+	<table class="drt-table" style="margin-bottom:8px;">
 		<thead><tr><th>Date</th><th>Time</th><th>Task</th><th>Category</th><th>Status</th><th>Duration</th><th>Notes</th></tr></thead>
 		<tbody>
 		<?php foreach ( $logs_shown as $log ) : ?>
@@ -209,6 +278,7 @@ $logs_shown = array_slice( $logs_all, 0, $row_cap );
 		<?php endif; ?>
 		</tbody>
 	</table>
+	<?php drt_pagination_controls( 'lp', $logs_page, $logs_pages, $logs_total, $per_page ); ?>
 
 	<h2 style="margin-top:32px;">Data, Storage &amp; Backup</h2>
 	<div class="drt-card">

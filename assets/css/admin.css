@@ -135,8 +135,16 @@
 /* ---------- Routine Editor ---------- */
 .drt-editor-columns { display: flex; gap: 24px; flex-wrap: wrap; }
 .drt-editor-columns > div { flex: 1 1 460px; min-width: 0; }
-.drt-slot-auto-done { background: var(--drt-green-light); }
-.drt-auto-done-badge { display: inline-block; font-size: 11px; font-weight: 700; color: var(--drt-green); margin-right: 6px; white-space: nowrap; }
+.drt-slot-auto-done { box-shadow: inset 3px 0 0 var(--drt-green); }
+
+.drt-toggle-switch { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; padding: 4px 2px; border-radius: 6px; }
+.drt-toggle-switch:hover { text-decoration: none; }
+.drt-toggle-track { position: relative; flex-shrink: 0; width: 34px; height: 18px; border-radius: 999px; background: #ccd0d4; transition: background .15s ease; }
+.drt-toggle-thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: left .15s ease; }
+.drt-toggle-switch.is-on .drt-toggle-track { background: var(--drt-green); }
+.drt-toggle-switch.is-on .drt-toggle-thumb { left: 18px; }
+.drt-toggle-label { font-size: 12.5px; font-weight: 600; color: var(--drt-ink-soft); white-space: nowrap; }
+.drt-toggle-switch.is-on .drt-toggle-label { color: var(--drt-green); }
 .drt-slot-form-card .form-table { width: 100%; }
 .drt-table-actions { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 
@@ -155,6 +163,12 @@
 .drt-bar-track { flex: 1; background: var(--drt-grey-light); border-radius: 999px; overflow: hidden; height: 16px; }
 .drt-bar-fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
 .drt-bar-value { width: 90px; font-size: 12px; color: var(--drt-ink-soft); text-align: right; white-space: nowrap; }
+
+.drt-pagination { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; padding: 4px 2px; flex-wrap: wrap; }
+.drt-pagination-count { font-size: 12px; color: var(--drt-ink-soft); }
+.drt-pagination-page { font-size: 12.5px; font-weight: 600; color: var(--drt-ink); white-space: nowrap; }
+.drt-pagination .button { border-radius: 6px; }
+.drt-pagination .button.disabled { opacity: 0.4; pointer-events: none; cursor: default; }
 
 .drt-btn-export { border-radius: 6px; }
 

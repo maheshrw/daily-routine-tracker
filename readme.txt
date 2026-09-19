@@ -3,7 +3,7 @@ Contributors: Mahesh Pandey
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.7.0
+Stable tag: 1.7.2
 License: GPLv2 or later
 
 A private, single-site plugin to run and track a personal hour-by-hour daily routine.
@@ -69,10 +69,13 @@ Three admin screens under "Routine Tracker" in the WP admin sidebar:
 - Uninstalling the plugin from wp-admin drops both tables. Back up first if
   you want to keep historical data.
 - Nothing is deleted automatically — logs accumulate indefinitely (~18-20
-  rows/day), which MySQL handles fine for years of use. The Reports page's
-  on-screen tables cap at 200 rows for large ranges (with a CSV export link
-  for the full set), and there's a manual "Delete logs older than [date]"
-  tool at the bottom of Reports if you want to trim old history yourself.
+  rows/day), which MySQL handles fine for years of use. The Task Log and
+  Billable tables on Reports are paginated (20/50/100 rows per page,
+  configurable), with an optional hard cap on total rows if you want one;
+  with no cap, every row in the selected Day/Week/Month/Year range is
+  reachable by paging. CSV export remains available for grabbing the whole
+  set at once. There's also a manual "Delete logs older than [date]" tool
+  at the bottom of Reports if you want to trim old history yourself.
 - To move everything to a new site: on the old site, Reports → Data,
   Storage & Backup → "Export All Data (JSON)". On the fresh new site
   (right after activating the plugin there, before adding any data of its

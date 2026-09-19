@@ -8,7 +8,7 @@ if ( ! function_exists( 'drt_render_slot_table' ) ) {
 		?>
 		<table class="drt-table">
 			<thead>
-				<tr><th>Time</th><th>Title</th><th>Category</th><th style="width:150px;">Auto Done</th><th style="width:90px;"></th></tr>
+				<tr><th>Time</th><th>Title</th><th>Category</th><th style="width:130px;">Auto Done</th><th style="width:90px;"></th></tr>
 			</thead>
 			<tbody>
 			<?php foreach ( $slots as $slot ) : ?>
@@ -18,11 +18,9 @@ if ( ! function_exists( 'drt_render_slot_table' ) ) {
 					<td class="drt-title"><?php echo esc_html( $slot->title ); ?></td>
 					<td><?php echo esc_html( ucfirst( $slot->category ) ); ?></td>
 					<td>
-						<?php if ( $is_auto_done ) : ?>
-							<span class="drt-auto-done-badge" title="Every future day with this slot is created already marked Done">✓ Auto</span>
-						<?php endif; ?>
-						<a class="button drt-btn-ghost <?php echo $is_auto_done ? 'drt-btn-danger-text' : 'drt-btn-outline'; ?>" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_toggle_auto_done&id=' . $slot->id . '&auto_done=' . ( $is_auto_done ? 0 : 1 ) ), 'drt_toggle_auto_done' ) ); ?>">
-							<?php echo $is_auto_done ? 'Turn off' : 'Mark Auto Done'; ?>
+						<a class="drt-toggle-switch <?php echo $is_auto_done ? 'is-on' : ''; ?>" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=drt_toggle_auto_done&id=' . $slot->id . '&auto_done=' . ( $is_auto_done ? 0 : 1 ) ), 'drt_toggle_auto_done' ) ); ?>" title="<?php echo $is_auto_done ? 'Click to turn off' : 'Click to mark this slot Auto Done'; ?>">
+							<span class="drt-toggle-track"><span class="drt-toggle-thumb"></span></span>
+							<span class="drt-toggle-label"><?php echo $is_auto_done ? 'Auto Done' : 'Off'; ?></span>
 						</a>
 					</td>
 					<td>
