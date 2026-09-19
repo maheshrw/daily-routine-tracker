@@ -15,6 +15,10 @@ class DRT_Admin {
 		add_action( 'admin_post_drt_delete_adhoc_log', array( $this, 'handle_delete_adhoc_log' ) );
 		add_action( 'admin_post_drt_force_db_upgrade', array( $this, 'handle_force_db_upgrade' ) );
 		add_action( 'admin_post_drt_toggle_auto_done', array( $this, 'handle_toggle_auto_done' ) );
+		add_action( 'admin_post_drt_export_task_log_csv', array( $this, 'handle_export_task_log_csv' ) );
+		add_action( 'admin_post_drt_prune_old_logs', array( $this, 'handle_prune_old_logs' ) );
+		add_action( 'admin_post_drt_export_full_backup', array( $this, 'handle_export_full_backup' ) );
+		add_action( 'admin_post_drt_import_full_backup', array( $this, 'handle_import_full_backup' ) );
 	}
 
 	public function register_menu() {
@@ -77,6 +81,7 @@ class DRT_Admin {
 	public function render_today_page() {
 		$date = $this->get_requested_date();
 		DRT_DB::ensure_logs_for_date( $date );
+		DRT_DB::apply_auto_done_catchup( $date );
 		$logs         = DRT_DB::get_logs_for_date( $date );
 		$log_ids      = wp_list_pluck( $logs, 'id' );
 		$subtasks_map = DRT_DB::get_subtasks_for_logs( $log_ids );
@@ -100,6 +105,7 @@ class DRT_Admin {
 	}
 
 	public function render_reports_page() {
+		$storage_stats = DRT_DB::get_logs_storage_stats();
 		include DRT_PLUGIN_DIR . 'includes/views/reports.php';
 	}
 
@@ -292,6 +298,140 @@ class DRT_Admin {
 			);
 		}
 		fclose( $out );
+		exit;
+	}
+
+	/**
+	 * Stream the full (non-billable-filtered) task log for a report range
+	 * as a CSV download — the fallback for when the on-screen Task Log
+	 * table is capped for a large range (see reports.php).
+	 */
+	public function handle_export_task_log_csv() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Not allowed' );
+		}
+		check_admin_referer( 'drt_export_task_log_csv' );
+
+		$range    = isset( $_GET['range'] ) ? sanitize_text_field( wp_unslash( $_GET['range'] ) ) : 'week';
+		$ref_date = isset( $_GET['ref_date'] ) ? sanitize_text_field( wp_unslash( $_GET['ref_date'] ) ) : current_time( 'Y-m-d' );
+		$summary  = DRT_Reports::build_summary( $range, $ref_date );
+
+		nocache_headers();
+		header( 'Content-Type: text/csv; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="task-log-' . $summary['start'] . '-to-' . $summary['end'] . '.csv"' );
+
+		$out = fopen( 'php://output', 'w' );
+		fputcsv( $out, array( 'Date', 'Time', 'Task', 'Category', 'Status', 'Duration (H:M:S)', 'Notes' ) );
+		foreach ( $summary['logs'] as $log ) {
+			fputcsv(
+				$out,
+				array(
+					$log->log_date,
+					substr( $log->scheduled_start, 0, 5 ),
+					$log->title,
+					$log->category,
+					$log->status,
+					$log->duration_seconds ? gmdate( 'H:i:s', (int) $log->duration_seconds ) : '',
+					$log->notes,
+				)
+			);
+		}
+		fclose( $out );
+		exit;
+	}
+
+	/**
+	 * Permanently delete every logged day (and its in-slot tasks) older
+	 * than the chosen cutoff date. Nothing auto-runs this — it only fires
+	 * from an explicit confirmed click on the Reports "Data & Storage"
+	 * card, and never touches the recurring weekday/weekend routine
+	 * template or dates on/after the cutoff.
+	 */
+	public function handle_prune_old_logs() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Not allowed' );
+		}
+		check_admin_referer( 'drt_prune_old_logs' );
+
+		$cutoff = isset( $_POST['cutoff_date'] ) ? sanitize_text_field( wp_unslash( $_POST['cutoff_date'] ) ) : '';
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $cutoff ) ) {
+			wp_safe_redirect( admin_url( 'admin.php?page=drt-reports&prune_error=1' ) );
+			exit;
+		}
+
+		$deleted = DRT_DB::delete_logs_before( $cutoff );
+		wp_safe_redirect( admin_url( 'admin.php?page=drt-reports&pruned=' . $deleted ) );
+		exit;
+	}
+
+	/**
+	 * Export every piece of data the plugin holds — routine template,
+	 * every logged day, every in-slot task — as one JSON file. This is
+	 * the file the Import tool below reads; it's a full raw dump, not
+	 * scoped to a date range like the CSV exports elsewhere on Reports.
+	 */
+	public function handle_export_full_backup() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Not allowed' );
+		}
+		check_admin_referer( 'drt_export_full_backup' );
+
+		$payload = array(
+			'plugin'      => 'daily-routine-tracker',
+			'schema'      => 1,
+			'exported_at' => current_time( 'mysql' ),
+			'site'        => home_url(),
+			'routine'     => DRT_DB::get_all_routine_slots_raw(),
+			'logs'        => DRT_DB::get_all_logs_raw(),
+			'subtasks'    => DRT_DB::get_all_subtasks_raw(),
+		);
+
+		nocache_headers();
+		header( 'Content-Type: application/json; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename="daily-routine-tracker-backup-' . current_time( 'Y-m-d' ) . '.json"' );
+		echo wp_json_encode( $payload );
+		exit;
+	}
+
+	/**
+	 * Import a full backup JSON file (see handle_export_full_backup).
+	 * Always inserts as new data with fresh IDs — intended for moving
+	 * everything to a brand-new site, not merging into one that already
+	 * has entries (which would duplicate).
+	 */
+	public function handle_import_full_backup() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Not allowed' );
+		}
+		check_admin_referer( 'drt_import_full_backup' );
+
+		if ( empty( $_FILES['backup_file']['tmp_name'] ) || UPLOAD_ERR_OK !== $_FILES['backup_file']['error'] ) {
+			wp_safe_redirect( admin_url( 'admin.php?page=drt-reports&import_error=' . rawurlencode( 'No file was uploaded.' ) ) );
+			exit;
+		}
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reading an uploaded tmp file, not a remote URL.
+		$raw  = file_get_contents( $_FILES['backup_file']['tmp_name'] );
+		$data = json_decode( $raw, true );
+
+		if ( null === $data ) {
+			wp_safe_redirect( admin_url( 'admin.php?page=drt-reports&import_error=' . rawurlencode( 'That file is not valid JSON.' ) ) );
+			exit;
+		}
+
+		$result = DRT_DB::import_full_backup( $data );
+
+		if ( is_wp_error( $result ) ) {
+			wp_safe_redirect( admin_url( 'admin.php?page=drt-reports&import_error=' . rawurlencode( $result->get_error_message() ) ) );
+			exit;
+		}
+
+		wp_safe_redirect(
+			admin_url(
+				'admin.php?page=drt-reports&imported=1&imp_routine=' . $result['routine']
+				. '&imp_logs=' . $result['logs'] . '&imp_subtasks=' . $result['subtasks']
+			)
+		);
 		exit;
 	}
 }

@@ -116,7 +116,8 @@ $date_label  = date_i18n( 'l, j F Y', strtotime( $date ) );
 				data-actual-start="<?php echo esc_attr( $log->actual_start ); ?>"
 				data-banked-seconds="<?php echo esc_attr( (int) $log->banked_seconds ); ?>"
 				data-logged-duration="<?php echo esc_attr( $log->duration_seconds ); ?>"
-				data-remind="<?php echo esc_attr( ! empty( $log->remind ) ? 1 : 0 ); ?>">
+				data-remind="<?php echo esc_attr( ! empty( $log->remind ) ? 1 : 0 ); ?>"
+				data-auto-done="<?php echo esc_attr( ! empty( $log->slot_auto_done ) ? 1 : 0 ); ?>">
 				<td class="drt-time"><?php echo esc_html( substr( $log->scheduled_start, 0, 5 ) . '–' . substr( $log->scheduled_end, 0, 5 ) ); ?></td>
 				<td class="drt-title">
 					<?php echo esc_html( $log->title ); ?>

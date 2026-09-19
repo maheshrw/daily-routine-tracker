@@ -240,26 +240,80 @@ class DRT_DB {
 		$slots    = self::get_routine( $day_type );
 		$now      = current_time( 'mysql' );
 		foreach ( $slots as $slot ) {
-			$is_auto_done = ! empty( $slot->auto_done );
-			$scheduled_seconds = max( 0, strtotime( $slot->end_time ) - strtotime( $slot->start_time ) );
 			$wpdb->insert(
 				$logs_table,
 				array(
-					'log_date'         => $date,
-					'slot_id'          => $slot->id,
-					'title'            => $slot->title,
-					'category'         => $slot->category,
-					'scheduled_start'  => $slot->start_time,
-					'scheduled_end'    => $slot->end_time,
-					'status'           => $is_auto_done ? 'done' : 'missed',
-					'actual_end'       => $is_auto_done ? $now : null,
-					'duration_seconds' => $is_auto_done ? $scheduled_seconds : null,
-					'created_at'       => $now,
-					'updated_at'       => $now,
+					'log_date'        => $date,
+					'slot_id'         => $slot->id,
+					'title'           => $slot->title,
+					'category'        => $slot->category,
+					'scheduled_start' => $slot->start_time,
+					'scheduled_end'   => $slot->end_time,
+					'status'          => 'missed',
+					'created_at'      => $now,
+					'updated_at'      => $now,
 				),
-				array( '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s' )
+				array( '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
 			);
 		}
+	}
+
+	/**
+	 * Complete any outstanding Auto Done slots for a date, but only once
+	 * their scheduled start time has actually arrived — never ahead of
+	 * time. For a date wholly in the past, every slot has "started" by
+	 * definition; for today, only slots whose start time is at or before
+	 * the current moment; for a future date, none yet (they stay
+	 * Upcoming). Checks the slot's *current* auto_done setting via a
+	 * live join, so turning it off before a slot's time arrives correctly
+	 * leaves that slot alone. Returns how many logs were completed.
+	 */
+	public static function apply_auto_done_catchup( $date ) {
+		global $wpdb;
+		$logs_table    = self::logs_table();
+		$routine_table = self::routine_table();
+		$today         = current_time( 'Y-m-d' );
+
+		if ( $date > $today ) {
+			return 0; // Future day — nothing has started yet.
+		}
+		$cutoff_time = ( $date < $today ) ? '23:59:59' : current_time( 'H:i:s' );
+
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT l.id, l.scheduled_start, l.scheduled_end
+				 FROM {$logs_table} l
+				 INNER JOIN {$routine_table} r ON r.id = l.slot_id
+				 WHERE l.log_date = %s AND r.auto_done = 1 AND l.status != 'done' AND l.scheduled_start <= %s",
+				$date,
+				$cutoff_time
+			)
+		);
+
+		if ( empty( $rows ) ) {
+			return 0;
+		}
+
+		$now = current_time( 'mysql' );
+		foreach ( $rows as $row ) {
+			$duration = max( 0, strtotime( $row->scheduled_end ) - strtotime( $row->scheduled_start ) );
+			$wpdb->update(
+				$logs_table,
+				array(
+					'status'           => 'done',
+					'actual_start'     => null,
+					'actual_end'       => $now,
+					'banked_seconds'   => 0,
+					'duration_seconds' => $duration,
+					'updated_at'       => $now,
+				),
+				array( 'id' => $row->id ),
+				array( '%s', '%s', '%s', '%d', '%d', '%s' ),
+				array( '%d' )
+			);
+		}
+
+		return count( $rows );
 	}
 
 	/**
@@ -360,12 +414,23 @@ class DRT_DB {
 		);
 	}
 
+	/**
+	 * A date's logs, each annotated with slot_auto_done — whether the
+	 * originating routine slot currently has Auto Done switched on (NULL
+	 * for one-off logs, which have no slot). Used so the browser can
+	 * auto-complete a slot the moment its time arrives, live, without a
+	 * page reload.
+	 */
 	public static function get_logs_for_date( $date ) {
 		global $wpdb;
-		$table = self::logs_table();
+		$logs_table    = self::logs_table();
+		$routine_table = self::routine_table();
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT * FROM {$table} WHERE log_date = %s ORDER BY scheduled_start ASC",
+				"SELECT l.*, r.auto_done AS slot_auto_done
+				 FROM {$logs_table} l
+				 LEFT JOIN {$routine_table} r ON r.id = l.slot_id
+				 WHERE l.log_date = %s ORDER BY l.scheduled_start ASC",
 				$date
 			)
 		);
@@ -397,11 +462,200 @@ class DRT_DB {
 		);
 	}
 
+	/**
+	 * All-time row count and earliest date — shown on the Reports data
+	 * cleanup card so you know how much history exists before deciding
+	 * whether to prune anything.
+	 */
+	public static function get_logs_storage_stats() {
+		global $wpdb;
+		$table = self::logs_table();
+		$count = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
+		$since = $wpdb->get_var( "SELECT MIN(log_date) FROM {$table}" );
+		return array( 'count' => $count, 'since' => $since );
+	}
+
+	/**
+	 * Permanently delete every log (and its subtasks) dated before
+	 * $cutoff_date. Nothing auto-runs this — it's only triggered by an
+	 * explicit click on the Reports "clean up old data" tool. Returns the
+	 * number of logs removed.
+	 */
+	public static function delete_logs_before( $cutoff_date ) {
+		global $wpdb;
+		$logs_table     = self::logs_table();
+		$subtasks_table = self::subtasks_table();
+
+		// Subtasks first, since they reference log_id.
+		$wpdb->query(
+			$wpdb->prepare(
+				"DELETE s FROM {$subtasks_table} s
+				 INNER JOIN {$logs_table} l ON l.id = s.log_id
+				 WHERE l.log_date < %s",
+				$cutoff_date
+			)
+		);
+
+		$deleted = $wpdb->query(
+			$wpdb->prepare( "DELETE FROM {$logs_table} WHERE log_date < %s", $cutoff_date )
+		);
+
+		return (int) $deleted;
+	}
+
 	/* ---------------------------------------------------------------
-	 * Subtasks: ad-hoc tasks logged inside a time slot (e.g. "Rosie
-	 * work" and "Study" both inside one Work Block), each with its own
-	 * start/stop timer and a billable flag for invoicing.
+	 * Full backup: export everything (routine template + every logged
+	 * day + every in-slot task) as one portable structure, and import it
+	 * back in — typically into a brand-new site. IDs are always remapped
+	 * on import (never reused verbatim), so this is safe to run against
+	 * an empty install without colliding with the default seeded routine
+	 * or anything else already there.
 	 * ------------------------------------------------------------- */
+
+	public static function get_all_routine_slots_raw() {
+		global $wpdb;
+		$table = self::routine_table();
+		return $wpdb->get_results( "SELECT * FROM {$table} ORDER BY day_type ASC, sort_order ASC, start_time ASC" );
+	}
+
+	public static function get_all_logs_raw() {
+		global $wpdb;
+		$table = self::logs_table();
+		return $wpdb->get_results( "SELECT * FROM {$table} ORDER BY log_date ASC, scheduled_start ASC" );
+	}
+
+	public static function get_all_subtasks_raw() {
+		global $wpdb;
+		$table = self::subtasks_table();
+		return $wpdb->get_results( "SELECT * FROM {$table} ORDER BY log_id ASC, id ASC" );
+	}
+
+	/**
+	 * Import a full backup produced by the Reports "Export All Data"
+	 * button. Always inserts as new rows with fresh auto-increment IDs —
+	 * it never overwrites or matches against existing data, so importing
+	 * the same file twice (or into a site that already has entries)
+	 * duplicates everything. Intended for moving data to a fresh site.
+	 *
+	 * $data is the decoded JSON backup: ['routine' => [...], 'logs' =>
+	 * [...], 'subtasks' => [...]]. Returns counts on success, or a
+	 * WP_Error on a structurally invalid file. Runs inside a transaction
+	 * so a failure partway through doesn't leave a half-imported mess.
+	 */
+	public static function import_full_backup( $data ) {
+		if ( ! is_array( $data ) || ! isset( $data['routine'], $data['logs'], $data['subtasks'] )
+			|| ! is_array( $data['routine'] ) || ! is_array( $data['logs'] ) || ! is_array( $data['subtasks'] ) ) {
+			return new WP_Error( 'drt_bad_backup', 'That file doesn\'t look like a Daily Routine Tracker backup (missing routine/logs/subtasks).' );
+		}
+
+		global $wpdb;
+		$routine_table  = self::routine_table();
+		$logs_table     = self::logs_table();
+		$subtasks_table = self::subtasks_table();
+		$now            = current_time( 'mysql' );
+
+		$wpdb->query( 'START TRANSACTION' );
+
+		// 1. Routine slots — build old_id => new_id map.
+		$slot_id_map = array();
+		foreach ( $data['routine'] as $slot ) {
+			if ( ! isset( $slot['id'] ) ) {
+				continue;
+			}
+			$ok = $wpdb->insert(
+				$routine_table,
+				array(
+					'day_type'   => isset( $slot['day_type'] ) ? sanitize_text_field( $slot['day_type'] ) : 'weekday',
+					'start_time' => isset( $slot['start_time'] ) ? sanitize_text_field( $slot['start_time'] ) : '00:00:00',
+					'end_time'   => isset( $slot['end_time'] ) ? sanitize_text_field( $slot['end_time'] ) : '00:00:00',
+					'title'      => isset( $slot['title'] ) ? sanitize_text_field( $slot['title'] ) : '',
+					'category'   => isset( $slot['category'] ) ? sanitize_text_field( $slot['category'] ) : 'other',
+					'sort_order' => isset( $slot['sort_order'] ) ? (int) $slot['sort_order'] : 0,
+					'active'     => isset( $slot['active'] ) ? (int) $slot['active'] : 1,
+					'auto_done'  => isset( $slot['auto_done'] ) ? (int) $slot['auto_done'] : 0,
+				),
+				array( '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d' )
+			);
+			if ( false === $ok ) {
+				$wpdb->query( 'ROLLBACK' );
+				return new WP_Error( 'drt_import_failed', 'Failed while importing the routine template: ' . $wpdb->last_error );
+			}
+			$slot_id_map[ (int) $slot['id'] ] = $wpdb->insert_id;
+		}
+
+		// 2. Logs — build old_id => new_id map, remapping slot_id.
+		$log_id_map = array();
+		foreach ( $data['logs'] as $log ) {
+			if ( ! isset( $log['id'] ) ) {
+				continue;
+			}
+			$old_slot_id = isset( $log['slot_id'] ) ? (int) $log['slot_id'] : null;
+			$new_slot_id = ( $old_slot_id && isset( $slot_id_map[ $old_slot_id ] ) ) ? $slot_id_map[ $old_slot_id ] : null;
+
+			$ok = $wpdb->insert(
+				$logs_table,
+				array(
+					'log_date'         => isset( $log['log_date'] ) ? sanitize_text_field( $log['log_date'] ) : $now,
+					'slot_id'          => $new_slot_id,
+					'title'            => isset( $log['title'] ) ? sanitize_text_field( $log['title'] ) : '',
+					'category'         => isset( $log['category'] ) ? sanitize_text_field( $log['category'] ) : 'other',
+					'scheduled_start'  => isset( $log['scheduled_start'] ) ? $log['scheduled_start'] : null,
+					'scheduled_end'    => isset( $log['scheduled_end'] ) ? $log['scheduled_end'] : null,
+					'status'           => isset( $log['status'] ) ? sanitize_text_field( $log['status'] ) : 'missed',
+					'remind'           => isset( $log['remind'] ) ? (int) $log['remind'] : 0,
+					'billable'         => isset( $log['billable'] ) ? (int) $log['billable'] : 0,
+					'actual_start'     => isset( $log['actual_start'] ) ? $log['actual_start'] : null,
+					'actual_end'       => isset( $log['actual_end'] ) ? $log['actual_end'] : null,
+					'banked_seconds'   => isset( $log['banked_seconds'] ) ? (int) $log['banked_seconds'] : 0,
+					'duration_seconds' => isset( $log['duration_seconds'] ) ? $log['duration_seconds'] : null,
+					'notes'            => isset( $log['notes'] ) ? sanitize_textarea_field( $log['notes'] ) : null,
+					'created_at'       => isset( $log['created_at'] ) ? $log['created_at'] : $now,
+					'updated_at'       => $now,
+				),
+				array( '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%d', '%d', '%s', '%s', '%s' )
+			);
+			if ( false === $ok ) {
+				$wpdb->query( 'ROLLBACK' );
+				return new WP_Error( 'drt_import_failed', 'Failed while importing logs: ' . $wpdb->last_error );
+			}
+			$log_id_map[ (int) $log['id'] ] = $wpdb->insert_id;
+		}
+
+		// 3. Subtasks — remap log_id.
+		foreach ( $data['subtasks'] as $st ) {
+			$old_log_id = isset( $st['log_id'] ) ? (int) $st['log_id'] : 0;
+			if ( ! $old_log_id || ! isset( $log_id_map[ $old_log_id ] ) ) {
+				continue; // Orphaned in the source data — skip rather than guess.
+			}
+			$ok = $wpdb->insert(
+				$subtasks_table,
+				array(
+					'log_id'           => $log_id_map[ $old_log_id ],
+					'title'            => isset( $st['title'] ) ? sanitize_text_field( $st['title'] ) : '',
+					'billable'         => isset( $st['billable'] ) ? (int) $st['billable'] : 0,
+					'actual_start'     => isset( $st['actual_start'] ) ? $st['actual_start'] : null,
+					'actual_end'       => isset( $st['actual_end'] ) ? $st['actual_end'] : null,
+					'banked_seconds'   => isset( $st['banked_seconds'] ) ? (int) $st['banked_seconds'] : 0,
+					'duration_seconds' => isset( $st['duration_seconds'] ) ? $st['duration_seconds'] : null,
+					'created_at'       => isset( $st['created_at'] ) ? $st['created_at'] : $now,
+					'updated_at'       => $now,
+				),
+				array( '%s', '%s', '%d', '%s', '%s', '%d', '%d', '%s', '%s' )
+			);
+			if ( false === $ok ) {
+				$wpdb->query( 'ROLLBACK' );
+				return new WP_Error( 'drt_import_failed', 'Failed while importing in-slot tasks: ' . $wpdb->last_error );
+			}
+		}
+
+		$wpdb->query( 'COMMIT' );
+
+		return array(
+			'routine'  => count( $slot_id_map ),
+			'logs'     => count( $log_id_map ),
+			'subtasks' => count( $data['subtasks'] ),
+		);
+	}
 
 	/**
 	 * Add a subtask. If $duration_minutes is given (e.g. entered directly

@@ -13,6 +13,7 @@
 	var originalTitle = document.title;
 	var notifiedEnded = {}; // log_id -> true once we've handled its end-of-slot notification
 	var reminderLastFired = {}; // log_id -> ms timestamp of the last "time for task" reminder
+	var autoDoneInFlight = {}; // log_id -> true while an auto-done ajax call is in flight, to avoid double-firing
 
 	function serverNow() {
 		return new Date(Date.now() + offsetMs);
@@ -138,6 +139,19 @@
 				if (!isDone) {
 					notifySlotEnded($row.find('.drt-title').text(), $row.data('start'), $row.data('end'));
 				}
+			}
+
+			// Auto Done slots: complete the moment their scheduled start
+			// arrives — never before — so a live tab reflects it without
+			// waiting for a reload. (Already-past ones get caught by the
+			// server-side catch-up on page load; this only needs to
+			// handle the boundary being crossed while the tab stays open.)
+			if ($row.attr('data-auto-done') === '1' && !isDone && !isFuture && !autoDoneInFlight[logId]) {
+				autoDoneInFlight[logId] = true;
+				ajax('drt_mark_done', { log_id: logId }, function (data) {
+					setRowState($row, { status: 'done', actualStart: '', bankedSeconds: 0, loggedDuration: data.duration_seconds });
+					delete autoDoneInFlight[logId];
+				});
 			}
 
 			// Reminder-flagged tasks (one-off tasks with "Remind me"

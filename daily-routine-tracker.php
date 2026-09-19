@@ -2,8 +2,8 @@
 /**
  * Plugin Name: Daily Routine Tracker
  * Plugin URI:  https://example.com
- * Description: Track your daily routine hour-by-hour, log what you actually did, run a Start/Pause/Done timer per time slot, log billable sub-tasks inside a slot or as standalone one-off tasks with reminders on any date, mark recurring slots as permanently Auto Done, and view day/week/month/year reports.
- * Version:     1.6.1
+ * Description: Track your daily routine hour-by-hour, log what you actually did, run a Start/Pause/Done timer per time slot, log billable sub-tasks inside a slot or as standalone one-off tasks with reminders on any date, mark recurring slots as permanently Auto Done, view day/week/month/year reports with CSV export, manage long-term data storage, and export/import a full backup between sites.
+ * Version:     1.7.0
  * Author:      Mahesh Pandey
  * License:     GPL v2 or later
  * Text Domain: daily-routine-tracker
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // No direct access.
 }
 
-define( 'DRT_VERSION', '1.6.1' );
+define( 'DRT_VERSION', '1.7.0' );
 define( 'DRT_PLUGIN_FILE', __FILE__ );
 define( 'DRT_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DRT_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
